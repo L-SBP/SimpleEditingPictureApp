@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 基础黑白 -->
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- 基础原色（RGB） -->
+    <color name="red">#FFFF0000</color>
+    <color name="green">#FF00FF00</color>
+    <color name="blue">#FF0000FF</color>
+
+    <!-- 基础二次色 -->
+    <color name="yellow">#FFFFFF00</color>
+    <color name="cyan">#FF00FFFF</color>
+    <color name="magenta">#FFFF00FF</color>
+
+    <!-- 常用中性灰（从浅到深） -->
+    <color name="gray_50">#FFF9FAFB</color>
+    <color name="gray_100">#F3F4F6</color>
+    <color name="gray_200">#E5E7EB</color>
+    <color name="gray_300">#D1D5DB</color>
+    <color name="gray_400">#9CA3AF</color>
+    <color name="gray_500">#6B7280</color>
+    <color name="gray_600">#4B5563</color>
+    <color name="gray_700">#374151</color>
+    <color name="gray_800">#1F2937</color>
+    <color name="gray_900">#111827</color>
+
+    <!-- 常用强调色（柔和版） -->
+    <color name="pink">#FFEC4899</color>
+    <color name="light_pink">#FFFBCFE8</color>
+    <color name="orange">#FFFF9800</color>
+    <color name="light_orange">#FFFFE0B2</color>
+    <color name="purple">#FF9C27B0</color>
+    <color name="light_purple">#FFEDE9FE</color>
+    <color name="indigo">#FF6366F1</color>
+    <color name="light_indigo">#FFEEF2FF</color>
+    <color name="teal">#FF14B8A6</color>
+    <color name="light_teal">#FFCCFBF1</color>
+
+    <!-- 实用颜色 -->
+    <color name="transparent">#00000000</color> <!-- 完全透明 -->
+    <color name="black_50">#80000000</color> <!-- 黑色半透明（50%） -->
+    <color name="white_50">#80FFFFFF</color> <!-- 白色半透明（50%） -->
+    <color name="black_20">#33000000</color> <!-- 黑色低透明（20%） -->
+    <color name="white_20">#33FFFFFF</color> <!-- 白色低透明（20%） -->
+
+    <!-- 常用功能色 -->
+    <color name="success">#FF22C55E</color> <!-- 成功（绿色） -->
+    <color name="warning">#FFF59E0B</color> <!-- 警告（黄色） -->
+    <color name="error">#FFEF4444</color> <!-- 错误（红色） -->
+    <color name="info">#FF3B82F6</color> <!-- 信息（蓝色） -->
+</resources>
