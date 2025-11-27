@@ -19,22 +19,23 @@
             android:layout_height="24dp"
             android:layout_marginStart="16dp"
             android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true"
             app:tint="@color/black"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toBottomOf="parent"/>
 
-        <TextView
+        <ImageView
             android:id="@+id/btn_save"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
             android:layout_marginEnd="16dp"
-            android:text="保存"
-            android:textColor="@color/black"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:gravity="center"
-            android:background="@drawable/bg_btn_rounded"
+            android:src="@android:drawable/ic_menu_save"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toBottomOf="parent"/>
@@ -69,7 +70,10 @@
             android:text="裁剪"
             android:textColor="@color/black"
             android:drawableTop="@android:drawable/ic_menu_crop"
-            android:drawableTint="@color/black" />
+            android:drawableTint="@color/black"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true" />
 
         <TextView
             android:id="@+id/tool_filter"
@@ -80,7 +84,10 @@
             android:text="滤镜"
             android:textColor="@color/black"
             android:drawableTop="@android:drawable/ic_menu_view"
-            android:drawableTint="@color/black" />
+            android:drawableTint="@color/black"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true" />
 
     </LinearLayout>
 

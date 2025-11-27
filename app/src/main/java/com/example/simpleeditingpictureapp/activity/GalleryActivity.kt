@@ -21,6 +21,7 @@ import com.example.simpleeditingpictureapp.R
 import com.example.simpleeditingpictureapp.recyclerview.adapter.ImageAdapter
 import com.example.simpleeditingpictureapp.recyclerview.bean.ImageBean
 import java.util.*
+import android.util.Log
 
 class GalleryActivity : AppCompatActivity() {
     private lateinit var galleryToolbar: Toolbar
@@ -28,6 +29,7 @@ class GalleryActivity : AppCompatActivity() {
     private lateinit var mRecyclerView: RecyclerView
     private lateinit var imageAdapter: ImageAdapter
     private val PERMISSION_REQUEST_CODE = 100
+    private val tag = "GalleryActivity"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -71,24 +73,19 @@ class GalleryActivity : AppCompatActivity() {
 
         if (itemId == R.id.menu_select) {
             // 处理"选择"菜单项点击事件
+            Log.d(tag, "select")
             val selectedImage = imageAdapter.getSelectedImage()
             if (selectedImage != null) {
                 // 启动图片编辑页面
                 val intent = Intent(this@GalleryActivity, EditorActivity::class.java)
-                intent.putExtra("imageUri", selectedImage.imageUri)
+                intent.putExtra("imageUri", selectedImage.imageUri.toString())
+                Log.d(tag, "imageUri: ${selectedImage.imageUri}")
                 startActivity(intent)
             } else {
                 Toast.makeText(this@GalleryActivity, "请选择一张图片", Toast.LENGTH_SHORT).show()
             }
             return true
-        } else if (itemId == android.R.id.home) {
-            // 处理返回按钮
-            val intent = Intent(this@GalleryActivity, MainActivity::class.java)
-            startActivity(intent)
-            finish()
-            return true
         }
-
         return super.onOptionsItemSelected(item)
     }
 

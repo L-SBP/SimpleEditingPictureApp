@@ -32,7 +32,7 @@ class ImageAdapter(private val imageList: MutableList<ImageBean>) : RecyclerView
         // 为ImageView设置点击监听器
         holder.imageView.setOnClickListener {
             // 获取当前holder的实际位置
-            val currentPosition = holder.adapterPosition
+            val currentPosition = holder.bindingAdapterPosition
             if (currentPosition == RecyclerView.NO_POSITION) {
                 return@setOnClickListener
             }
