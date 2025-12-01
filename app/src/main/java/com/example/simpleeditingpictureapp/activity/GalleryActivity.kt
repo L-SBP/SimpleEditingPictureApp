@@ -8,6 +8,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.provider.MediaStore
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -119,6 +120,7 @@ class GalleryActivity : AppCompatActivity() {
         }
     }
 
+    @SuppressLint("NotifyDataSetChanged")
     private fun loadImageList() {
         Thread {
             imageList.clear()
