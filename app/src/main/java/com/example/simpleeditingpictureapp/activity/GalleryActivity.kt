@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
+import android.os.Build
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
@@ -91,18 +92,37 @@ class GalleryActivity : AppCompatActivity() {
     }
 
     private fun checkPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.READ_EXTERNAL_STORAGE
-        ) == PackageManager.PERMISSION_GRANTED
+        // Android 13 (API 33)及以上使用READ_MEDIA_IMAGES权限
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_MEDIA_IMAGES
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            // Android 12及以下使用READ_EXTERNAL_STORAGE权限
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+        }
     }
 
     private fun requestPermission() {
-        ActivityCompat.requestPermissions(
-            this,
-            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE),
-            PERMISSION_REQUEST_CODE
-        )
+        // Android 13 (API 33)及以上使用READ_MEDIA_IMAGES权限
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.READ_MEDIA_IMAGES),
+                PERMISSION_REQUEST_CODE
+            )
+        } else {
+            // Android 12及以下使用READ_EXTERNAL_STORAGE权限
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE),
+                PERMISSION_REQUEST_CODE
+            )
+        }
     }
 
     override fun onRequestPermissionsResult(
@@ -124,47 +144,66 @@ class GalleryActivity : AppCompatActivity() {
     private fun loadImageList() {
         Thread {
             imageList.clear()
+            Log.d(tag, "开始加载图片列表")
 
             try {
                 val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                val projection = arrayOf(
-                    MediaStore.Images.Media._ID,
-                    MediaStore.Images.Media.DATA
-                )
+                val projection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    // Android 10及以上使用新的API
+                    arrayOf(
+                        MediaStore.Images.Media._ID,
+                        MediaStore.Images.Media.DISPLAY_NAME,
+                        MediaStore.Images.Media.SIZE
+                    )
+                } else {
+                    // Android 9及以下使用旧的API
+                    arrayOf(
+                        MediaStore.Images.Media._ID,
+                        MediaStore.Images.Media.DATA
+                    )
+                }
+                
+                val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
                 val cursor: Cursor? = contentResolver.query(
-                    uri, projection, null, null,
-                    MediaStore.Images.Media.DATE_ADDED + " DESC"
+                    uri, projection, null, null, sortOrder
                 )
 
                 cursor?.use { c ->
+                    val idColumn = c.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                    var count = 0
+                    
+                    Log.d(tag, "找到图片数量: ${c.count}")
+                    
                     while (c.moveToNext()) {
                         try {
-                            // 获取图片ID并构建Uri
-                            val imageIdIndex =
-                                c.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-                            val imageId = c.getLong(imageIdIndex)
-
-                            // 构建图片Uri
-                            val imageUri = Uri.withAppendedPath(
+                            val id = c.getLong(idColumn)
+                            val contentUri = Uri.withAppendedPath(
                                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                                imageId.toString()
+                                id.toString()
                             )
 
+                            Log.d(tag, "加载图片: $contentUri")
+                            
                             val imageBean = ImageBean()
-                            imageBean.imageUri = imageUri
+                            imageBean.imageUri = contentUri
                             imageList.add(imageBean)
+                            
+                            count++
                         } catch (e: Exception) {
-                            e.printStackTrace()
+                            Log.e(tag, "加载图片出错", e)
                         }
                     }
+                    
+                    Log.d(tag, "成功加载 $count 张图片")
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e(tag, "加载图片列表出错", e)
             }
 
             // 切换到主线程更新UI
             runOnUiThread {
                 if (::mRecyclerView.isInitialized && ::imageAdapter.isInitialized) {
+                    Log.d(tag, "更新UI，图片数量: ${imageList.size}")
                     imageAdapter.notifyDataSetChanged()
                 }
             }
