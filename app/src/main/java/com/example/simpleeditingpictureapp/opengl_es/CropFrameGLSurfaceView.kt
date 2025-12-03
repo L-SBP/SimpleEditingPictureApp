@@ -76,6 +76,7 @@ class CropFrameGLSurfaceView @JvmOverloads constructor(
                     updateCropFrameRect(event.x, event.y)
                     updateRenderCropFrameRect()
                     cropRectChangeListener?.onCropRectChanged(getNormalizedCropFrameRect())
+                    // 确保请求渲染，即使是在快速移动时
                     requestRender()
                 }
             }
@@ -190,9 +191,10 @@ class CropFrameGLSurfaceView @JvmOverloads constructor(
 
     private fun updateRenderCropFrameRect() {
         queueEvent {
-            cropFrameRenderer.updateCropFrameRect(
-                getNormalizedCropFrameRect()
-            )
+            val normalizedRect = getNormalizedCropFrameRect()
+            cropFrameRenderer.updateCropFrameRect(normalizedRect)
+            // 确保在更新后立即请求渲染
+            requestRender()
         }
     }
 

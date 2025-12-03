@@ -19,7 +19,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SimpleEditingPictureApp">
         <activity
-            android:name=".activity.MainActivity"
+            android:name=".activity.LoginActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -27,8 +27,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".activity.MainActivity" />
         <activity android:name=".activity.GalleryActivity" />
         <activity android:name=".activity.EditorActivity" />
+        <activity android:name=".activity.ProfileActivity" />
     </application>
 
 </manifest>

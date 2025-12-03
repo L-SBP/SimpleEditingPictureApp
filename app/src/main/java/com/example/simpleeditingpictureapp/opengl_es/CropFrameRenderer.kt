@@ -52,7 +52,6 @@ class CropFrameRenderer(
 
         // 绘制裁剪框
         drawMask()
-        drawCropFrame()
         drawGrid()
         drawControlPoints()
     }
@@ -205,12 +204,8 @@ class CropFrameRenderer(
         drawRect(RectF(cropFrameRect.left, cropFrameRect.bottom, cropFrameRect.right, 1f), maskColor)
 
     }
-    private fun drawCropFrame() {
-        val frameColor = floatArrayOf(1.0f, 1.0f, 1.0f, 1.0f)
-        drawRect(cropFrameRect, frameColor, false)
-    }
     private fun drawGrid() {
-        val gridColor = floatArrayOf(0.5f, 0.5f, 0.5f, 0.5f)
+        val gridColor = floatArrayOf(1.0f, 1.0f, 1.0f, 1.0f)
         val cropFrameWith = cropFrameRect.width()
         val cropFrameHeight = cropFrameRect.height()
 
@@ -265,7 +260,7 @@ class CropFrameRenderer(
         updateVertexBuffer(vertices)
 
         GLES20.glUniform4fv(uColorLoc, 1, color, 0)
-        GLES20.glUniform1i(uDrawTypeLoc, 0)
+        GLES20.glUniform1f(uDrawTypeLoc, 0.0f)
 
         val drawMode = if (isFill) GLES20.GL_TRIANGLE_STRIP else GLES20.GL_LINE_LOOP
         GLES20.glDrawArrays(drawMode, 0, 4)
@@ -279,7 +274,7 @@ class CropFrameRenderer(
         updateVertexBuffer(vertices)
 
         GLES20.glUniform4fv(uColorLoc, 1, color, 0)
-        GLES20.glUniform1i(uDrawTypeLoc, 0)
+        GLES20.glUniform1f(uDrawTypeLoc, 0.0f)
         GLES20.glDrawArrays(GLES20.GL_LINES, 0, 2)
     }
 
