@@ -27,11 +27,6 @@ class RecommendAdapter(private val recommendList: List<RecommendBean>) : Recycle
             .into(holder.imageView)
 
         holder.textView.text = recommendBean.title
-
-        // 设置点击事件
-        holder.itemView.setOnClickListener {
-            // 这里可以添加点击事件处理
-        }
     }
 
     override fun getItemCount(): Int {

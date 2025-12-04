@@ -4,7 +4,7 @@ varying vec2 v_tex_coord;
 uniform sampler2D u_texture;
 
 uniform bool u_gray_scale;      // 灰度开关
-uniform float u_contrast;       // 对比度[0.0, 2.0] (修正拼写)
+uniform float u_contrast;       // 对比度[0.0, 2.0]
 uniform float u_saturation;     // 饱和度[0.0, 2.0]
 
 void main() {

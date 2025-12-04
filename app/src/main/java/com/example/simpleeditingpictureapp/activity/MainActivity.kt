@@ -12,6 +12,8 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.PagerSnapHelper
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.DataSource
+import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.load.resource.gif.GifDrawable
 import com.bumptech.glide.request.target.SimpleTarget
 import com.bumptech.glide.request.transition.Transition
@@ -19,6 +21,7 @@ import com.example.simpleeditingpictureapp.R
 import com.example.simpleeditingpictureapp.recyclerview.adapter.BannerAdapter
 import com.example.simpleeditingpictureapp.recyclerview.adapter.RecommendAdapter
 import com.example.simpleeditingpictureapp.recyclerview.bean.RecommendBean
+import com.bumptech.glide.request.RequestListener
 
 class MainActivity : AppCompatActivity() {
     private val tag = "MainActivity"
@@ -60,8 +63,6 @@ class MainActivity : AppCompatActivity() {
         // 初始化底部导航栏
         initBottomNavigation()
 
-        // 底部导航栏点击事件已在initBottomNavigation中处理
-
         // 先初始化Banner，确保视图已经正确加载
         Log.d(tag, "init the banner")
         initBanner()
@@ -92,25 +93,21 @@ class MainActivity : AppCompatActivity() {
         rvBanner.adapter = bannerAdapter
 
         rvBanner.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                super.onScrolled(recyclerView, dx, dy)
-                val layoutManager = recyclerView.layoutManager as LinearLayoutManager
-                val firstVisiblePosition = layoutManager.findFirstVisibleItemPosition()
-                val firstVisibleView = layoutManager.findViewByPosition(firstVisiblePosition)
+            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                super.onScrollStateChanged(recyclerView, newState)
 
-                if (firstVisibleView != null) {
-                    val viewCenter = firstVisibleView.left + firstVisibleView.width / 2
-                    val recyclerCenter = recyclerView.width / 2
-
-                    if (Math.abs(viewCenter - recyclerCenter) < firstVisibleView.width / 2) {
-                        val realPosition = firstVisiblePosition % bannerData.size
-                        updateIndicator(realPosition)
+                if (newState == RecyclerView.SCROLL_STATE_IDLE) {
+                    val layoutManager = recyclerView.layoutManager as LinearLayoutManager
+                    // findFirstCompletelyVisibleItemPosition返回的就是0~getItemCount()-1的数
+                    val centerPosition = layoutManager.findFirstCompletelyVisibleItemPosition()
+                    if (centerPosition != RecyclerView.NO_POSITION) {
+                        updateIndicator(centerPosition % bannerData.size)
                     }
                 }
             }
         })
 
-        val initPosition = 50
+        val initPosition = Int.MAX_VALUE / 2
         rvBanner.post {
             rvBanner.scrollToPosition(initPosition)
             updateIndicator(initPosition % bannerData.size)
@@ -147,21 +144,34 @@ class MainActivity : AppCompatActivity() {
         Glide.with(this)
             .asGif()
             .load(R.drawable.sample_2)
-            .into (object : SimpleTarget<GifDrawable>() {
+            .listener(object : RequestListener<GifDrawable> {
+                override fun onLoadFailed(
+                    e: GlideException?,
+                    model: Any?,
+                    target: com.bumptech.glide.request.target.Target<GifDrawable?>,
+                    isFirstResource: Boolean
+                ): Boolean {
+                    return false
+                }
+
                 override fun onResourceReady(
                     resource: GifDrawable,
-                    transition: Transition<in GifDrawable>?
-                ) {
+                    model: Any,
+                    target: com.bumptech.glide.request.target.Target<GifDrawable?>?,
+                    dataSource: DataSource,
+                    isFirstResource: Boolean
+                ): Boolean {
                     resource.setLoopCount(GifDrawable.LOOP_FOREVER)
-                    mediaPreviewView.setImageDrawable(resource)
                     resource.start()
+                    return false
                 }
             })
+            .into(mediaPreviewView)
     }
 
     override fun onResume() {
         super.onResume()
-
+        setNavigationItemSelection(0)
     }
 
     override fun onPause() {

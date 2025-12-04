@@ -101,7 +101,8 @@ class EditorActivity : AppCompatActivity() {
             Log.d(tag, "Creating EditorRenderer")
             renderer = EditorRenderer(this, imageUri)
             glSurfaceView.setRenderer(renderer)
-            glSurfaceView.renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
+            // 使用连续渲染模式确保图片加载后能立即显示
+            glSurfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
             glSurfaceView.requestRender()
             Log.d(tag, "EditorRenderer setup completed")
 
@@ -116,8 +117,14 @@ class EditorActivity : AppCompatActivity() {
                     // 裁剪模式下，事件只交给 CropFrameView 处理
                     cropFrameViewGLSurfaceView.onTouchEvent(event)
                 } else {
-                    // 非裁剪模式下，事件只交给手势检测器处理
+                    // 非裁剪模式下，同时处理平移和缩放手势
+                    // 缩放手势检测器总是接收事件
                     scaleEditorGestureDetector?.onTouchEvent(event)
+
+                    // 平移手势检测器只在单指触摸时处理事件
+                    if (event.pointerCount <= 1) {
+                        editorGestureDetector.onTouchEvent(event)
+                    }
                 }
                 true // 消费事件
             }
@@ -154,7 +161,10 @@ class EditorActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         btnBack.setOnClickListener {
-            val intent = Intent(this@EditorActivity, GalleryActivity::class.java)
+            // 直接返回MainActivity，不经过GalleryActivity
+            val intent = Intent(this@EditorActivity, MainActivity::class.java)
+            // 使用FLAG_ACTIVITY_CLEAR_TOP确保返回到MainActivity而不是创建新实例
+            intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
             startActivity(intent)
             finish()
         }
@@ -206,11 +216,11 @@ class EditorActivity : AppCompatActivity() {
                 val value = progress / 100.0f
                 when (seekBar?.id) {
                     R.id.seekbar_contrast -> {
-                        contrastValue = value * 2.0f // Map to 0.0 - 2.0
+                        contrastValue = value // 0.0 - 2.0 (max is 200, divided by 100)
                         renderer.setContrast(contrastValue)
                     }
                     R.id.seekbar_saturation -> {
-                        saturationValue = value * 2.0f // Map to 0.0 - 2.0
+                        saturationValue = value // 0.0 - 2.0 (max is 200, divided by 100)
                         renderer.setSaturation(saturationValue)
                     }
                 }
@@ -263,7 +273,11 @@ class EditorActivity : AppCompatActivity() {
         originalContrastValue = contrastValue
         originalSaturationValue = saturationValue
 
-        renderer.setFilterEnabled(true)
+        // 设置SeekBar的初始值
+        switchGrayscale.isChecked = useGrayscale
+        seekbarContrast.progress = (contrastValue * 100).toInt()
+        seekbarSaturation.progress = (saturationValue * 100).toInt()
+
         updateUiForEditing(true)
         glSurfaceView.requestRender()
 
@@ -281,14 +295,13 @@ class EditorActivity : AppCompatActivity() {
             saturationValue = originalSaturationValue
 
             switchGrayscale.isChecked = useGrayscale
-            seekbarContrast.progress = (contrastValue * 50).toInt()
-            seekbarSaturation.progress = (saturationValue * 50).toInt()
+            seekbarContrast.progress = (contrastValue * 100).toInt()
+            seekbarSaturation.progress = (saturationValue * 100).toInt()
 
             renderer.setGrayscaleEnabled(useGrayscale)
             renderer.setContrast(contrastValue)
             renderer.setSaturation(saturationValue)
         }
-        renderer.setFilterEnabled(false)
 
         updateUiForEditing(false)
         glSurfaceView.requestRender()
@@ -340,13 +353,7 @@ class EditorActivity : AppCompatActivity() {
         glSurfaceView.queueEvent {
             try {
                 // 获取处理后的图像
-                val editedBitmap = if (isCropping) {
-                    // 如果在裁剪模式，获取裁剪后的图像
-                    renderer.getCroppedBitmap(glSurfaceView.width, glSurfaceView.height)
-                } else {
-                    // 否则获取全尺寸图像
-                    renderer.getFullBitmap(glSurfaceView.width, glSurfaceView.height)
-                }
+                val editedBitmap = renderer.getFullBitmap(glSurfaceView.width, glSurfaceView.height)
 
                 // 回到主线程保存图像
                 runOnUiThread {
@@ -410,6 +417,8 @@ class EditorActivity : AppCompatActivity() {
 
             // 返回主页
             val intent = Intent(this@EditorActivity, MainActivity::class.java)
+            // 使用FLAG_ACTIVITY_CLEAR_TOP确保返回到MainActivity而不是创建新实例
+            intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
             startActivity(intent)
             finish()
 

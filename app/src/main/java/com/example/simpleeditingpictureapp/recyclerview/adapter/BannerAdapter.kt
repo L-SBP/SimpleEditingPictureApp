@@ -16,12 +16,9 @@ class BannerAdapter(
     private val data: List<Int>
 ) : RecyclerView.Adapter<BannerAdapter.BannerViewHolder>() {
 
-    // 记录每个位置应该加载的图片
-    private val positionToResId = mutableMapOf<Int, Int>()
-
+    private val tag = "BannerAdapter"
     class BannerViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val gradientImageView: CustomImageView = itemView.findViewById(R.id.gradient_image_view)
-        var currentPosition = -1
 
         init {
             // 设置缩放模式：填充整个视图，不留空白
@@ -33,7 +30,7 @@ class BannerAdapter(
         Log.d("BannerAdapter", "创建ViewHolder")
 
         val view = LayoutInflater.from(parent.context).inflate(
-            R.layout.item_banner_gradient_clip_image,
+            R.layout.item_banner_image,
             parent,
             false
         )
@@ -47,19 +44,17 @@ class BannerAdapter(
 
         Log.d("BannerAdapter", "绑定位置: $position, 资源ID: $imageResId")
 
-        // 检查是否需要重新加载
-        if (holder.currentPosition == position) {
-            Log.d("BannerAdapter", "位置相同，跳过加载")
-            return
+        holder.gradientImageView.apply {
+            setSweepEnabled(false)
+            setGradientHeightRatio(0f)
+            setSweepWidth(0f)
+            setSweepSpeed(0f)
         }
 
-        holder.currentPosition = position
-        positionToResId[position] = imageResId
-
         // 使用Glide加载图片到ImageView，使用FIT_XY模式
-        Glide.with(context)
+        Glide.with(holder.itemView.context)
             .load(imageResId)
-            .dontTransform()  // 不进行任何变换，让ImageView的scaleType处理
+            .dontTransform()
             .into(holder.gradientImageView)
             
         // 根据位置决定使用哪种效果
@@ -81,14 +76,14 @@ class BannerAdapter(
 
     override fun onViewRecycled(holder: BannerViewHolder) {
         super.onViewRecycled(holder)
-        Log.d("BannerAdapter", "视图被回收: position=${holder.currentPosition}")
-
-        // 清理Glide请求
-        Glide.with(context).clear(holder.gradientImageView)
-        holder.currentPosition = -1
+        Log.d(tag, "回收ViewHolder")
+        holder.gradientImageView.apply {
+            setSweepEnabled(false)
+            clearAnimation()
+        }
     }
 
     override fun getItemCount(): Int {
-        return if (data.isEmpty()) 0 else 100
+        return if (data.isEmpty()) 0 else Int.MAX_VALUE
     }
 }

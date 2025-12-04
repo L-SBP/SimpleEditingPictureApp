@@ -9,7 +9,6 @@ varying vec2 v_position;       // 顶点坐标
 
 void main() {
     if (u_draw_type == 1.0) {
-        // 绘制圆形：计算像素到圆心的距离，超出则透明
         float dist = distance(v_position, u_circle_center);
         if (dist > u_circle_radius) {
             discard; // 丢弃超出的像素

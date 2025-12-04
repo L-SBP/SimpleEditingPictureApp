@@ -9,7 +9,6 @@ import android.opengl.GLSurfaceView
 import android.opengl.Matrix
 import android.util.Log
 import com.bumptech.glide.Glide
-import com.bumptech.glide.request.transition.Transition
 import com.example.simpleeditingpictureapp.R
 import com.example.simpleeditingpictureapp.activity.EditorActivity
 import java.nio.ByteBuffer
@@ -17,6 +16,14 @@ import java.nio.FloatBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import androidx.core.graphics.createBitmap
+import com.bumptech.glide.load.DataSource
+import com.bumptech.glide.load.engine.GlideException
+import com.bumptech.glide.request.RequestListener
+import com.bumptech.glide.request.target.Target
+import com.bumptech.glide.request.transition.Transition
+import java.nio.ByteOrder
+import kotlin.math.max
+import kotlin.math.min
 
 class EditorRenderer (
     private val context: Context,
@@ -50,13 +57,16 @@ class EditorRenderer (
     private var mFocusXInGl = 0.0f
     private var mFocusYInGl = 0.0f
 
+    // 平移 (Panning)
+    private var mPanX = 0.0f
+    private var mPanY = 0.0f
+
     // 裁剪 (Cropping)
     private var isCropping = false
     private val cropTexMatrix = FloatArray(16).apply { Matrix.setIdentityM(this, 0) } // 裁剪纹理矩阵
     private val cropRect = RectF(0.0f, 0.0f, 1.0f, 1.0f) // 归一化裁剪区域
 
     // 滤镜 (Filtering)
-    private var isFiltering = false
     private var useGrayscale = false // 灰度滤镜开关
     private var contrast = 1.0f      // 对比度 (1.0为原始值)
     private var saturation = 1.0f  // 饱和度 (1.0为原始值)
@@ -83,8 +93,15 @@ class EditorRenderer (
     private var uSaturationLoc = -1
 
     override fun onSurfaceCreated(gl: GL10, config: EGLConfig) {
+        Log.d(tag, "onSurfaceCreated 开始")
+
         // 创建程序对象
         createProgram()
+        if (program == 0) {
+            Log.e(tag, "着色器程序创建失败")
+            return
+        }
+        Log.d(tag, "着色器程序创建成功，ID: $program")
 
         // 获取着色器参数位置
         findShaderLocation()
@@ -95,8 +112,9 @@ class EditorRenderer (
         // 异步加载图片
         loadImageAsync()
 
-        // 触发渲染触发
+        // 触发渲染
         (context as EditorActivity).getGLSurfaceView().requestRender()
+        Log.d(tag, "onSurfaceCreated 完成")
     }
 
 
@@ -104,10 +122,22 @@ class EditorRenderer (
         GLES20.glClearColor(1.0f, 1.0f, 1.0f, 1.0f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
 
-        Log.d(tag, "onDrawFrame - isCropping: $isCropping, cropRect: $cropRect")
+        Log.d(tag, "onDrawFrame - textureId: $textureId, isCropping: $isCropping, cropRect: $cropRect")
+
+        // 检查纹理是否已加载
+        if (textureId == -1) {
+            Log.w(tag, "纹理尚未加载，跳过渲染")
+            return
+        }
+
+        // 确保着色器程序已创建并正在使用
+        GLES20.glUseProgram(program)
 
         // 1. MVP Matrix for scaling and positioning
         Matrix.setIdentityM(mModelMatrix, 0)
+        // 应用平移
+        Matrix.translateM(mModelMatrix, 0, mPanX, mPanY, 0.0f)
+        // 应用缩放（以焦点为中心）
         Matrix.translateM(mModelMatrix, 0, mFocusXInGl, mFocusYInGl, 0.0f)
         Matrix.scaleM(mModelMatrix, 0, mScale, mScale, 1.0f)
         Matrix.translateM(mModelMatrix, 0, -mFocusXInGl, -mFocusYInGl, 0.0f)
@@ -137,6 +167,12 @@ class EditorRenderer (
         GLES20.glUniform1i(uTextureLoc, 0)
 
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+
+        // 检查OpenGL错误
+        val error = GLES20.glGetError()
+        if (error != GLES20.GL_NO_ERROR) {
+            Log.e(tag, "OpenGL错误: $error")
+        }
     }
 
     override fun onSurfaceChanged(
@@ -158,7 +194,6 @@ class EditorRenderer (
         )
     }
 
-    // --- Public API for EditorActivity ---
 
     fun applyScaling(scale: Float, focusX: Float, focusY: Float){
         mScale = scale
@@ -166,10 +201,23 @@ class EditorRenderer (
         mFocusYInGl = (mViewHeight - focusY) / mViewHeight
     }
 
-    fun setFilterEnabled(enabled: Boolean) {
-        isFiltering = enabled
-        Log.i(tag, "setFilterEnabled: $enabled")
+    fun applyPan(dx: Float, dy: Float) {
+        // 将屏幕坐标转换为OpenGL坐标
+        val dxGl = dx / mViewWidth
+        val dyGl = dy / mViewHeight
+
+        // 应用平移，考虑缩放因子
+        mPanX += dxGl / mScale
+        mPanY += dyGl / mScale
+
+        // 限制平移范围
+        val maxPanX = 0.5f * (mScale - 1.0f)
+        val maxPanY = 0.5f * (mScale - 1.0f)
+
+        mPanX = max(-maxPanX, min(maxPanX, mPanX))
+        mPanY = max(-maxPanY, min(maxPanY, mPanY))
     }
+
 
     fun setGrayscaleEnabled(enabled: Boolean) {
         useGrayscale = enabled
@@ -182,10 +230,13 @@ class EditorRenderer (
     fun setSaturation(value: Float) {
         saturation = value
     }
-
     fun setCropMode(enabled: Boolean) {
         isCropping = enabled
         Log.d(tag, "setCropMode: $enabled")
+    }
+
+    fun isCropModeEnabled(): Boolean {
+        return isCropping
     }
 
     fun setCropRect(normalizedCropRect: RectF) {
@@ -212,15 +263,36 @@ class EditorRenderer (
 //    }
 
     private fun createProgram() {
+        Log.d(tag, "开始创建着色器程序")
+
         val vertexShaderCode = ShaderHelper.readShaderFileFromResource(R.raw.editor_vertex_shader, context)
         val fragmentShaderCode = ShaderHelper.readShaderFileFromResource(R.raw.editor_fragment_shader, context)
-        val vertexShaderId = ShaderHelper.compileVertexShader(vertexShaderCode)
-        val fragmentShaderId = ShaderHelper.compileFragmentShader(fragmentShaderCode)
-        program = ShaderHelper.linkProgram(vertexShaderId, fragmentShaderId)
-        if (program == 0){
-            throw RuntimeException("Shader program compilation failed")
+
+        if (vertexShaderCode == null || fragmentShaderCode == null) {
+            Log.e(tag, "无法读取着色器代码")
+            return
         }
+
+        val vertexShaderId = ShaderHelper.compileVertexShader(vertexShaderCode)
+        if (vertexShaderId == 0) {
+            Log.e(tag, "顶点着色器编译失败")
+            return
+        }
+
+        val fragmentShaderId = ShaderHelper.compileFragmentShader(fragmentShaderCode)
+        if (fragmentShaderId == 0) {
+            Log.e(tag, "片元着色器编译失败")
+            return
+        }
+
+        program = ShaderHelper.linkProgram(vertexShaderId, fragmentShaderId)
+        if (program == 0) {
+            Log.e(tag, "着色器程序链接失败")
+            return
+        }
+
         GLES20.glUseProgram(program)
+        Log.d(tag, "着色器程序创建并使用成功")
     }
 
     private fun findShaderLocation(){
@@ -289,6 +361,7 @@ class EditorRenderer (
     }
 
     private fun loadImageAsync() {
+        Log.d(tag, "开始加载图片: $imageUri")
         Glide.with(context)
             .asBitmap()
             .load(imageUri)
@@ -326,52 +399,6 @@ class EditorRenderer (
         if (program != 0) {
             GLES20.glDeleteProgram(program)
         }
-    }
-
-    fun getCroppedBitmap(viewWidth: Int, viewHeight: Int) : Bitmap? {
-        if (textureId == -1) return null
-
-        // 创建纹理作为FBO的颜色附件
-        val fboIds = IntArray(1)
-        GLES20.glGenFramebuffers(1, fboIds, 0)
-        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, fboIds[0])
-
-        // 创建纹理作为FBO的颜色附件
-        val cropTexId = IntArray(1)
-        GLES20.glGenTextures(1, cropTexId, 0)
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, cropTexId[0])
-
-        // 裁剪后的尺寸
-        val cropWidth = (viewWidth * cropRect.width()).toInt()
-        val cropHeight = (viewHeight * cropRect.height()).toInt()
-        GLES20.glTexImage2D(
-            GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA,
-            cropWidth, cropHeight, 0,
-            GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, null
-        )
-        GLES20.glTexParameteri(
-            GLES20.GL_TEXTURE_2D,
-            GLES20.GL_TEXTURE_MIN_FILTER,
-            GLES20.GL_LINEAR
-        )
-
-        GLES20.glViewport(0, 0, cropWidth, cropHeight)
-        onDrawFrame(null)
-
-        val bitmap = createBitmap(cropWidth, cropHeight)
-        val buffer = ByteBuffer.allocateDirect(cropWidth * cropHeight * 4)
-        GLES20.glReadPixels(
-            0, 0, cropWidth, cropHeight,
-            GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, buffer
-        )
-        bitmap.copyPixelsFromBuffer(buffer)
-
-        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
-        GLES20.glDeleteFramebuffers(1, fboIds, 0)
-        GLES20.glDeleteTextures(1, cropTexId, 0)
-
-        val flipMatrix = android.graphics.Matrix().apply { postScale(1f, -1f) }
-        return Bitmap.createBitmap(bitmap, 0, 0, cropWidth, cropHeight, flipMatrix, true)
     }
 
     fun getFullBitmap(viewWidth: Int, viewHeight: Int) : Bitmap? {

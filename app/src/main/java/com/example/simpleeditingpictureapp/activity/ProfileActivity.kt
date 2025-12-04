@@ -137,4 +137,9 @@ class ProfileActivity : AppCompatActivity() {
             .setNegativeButton("取消", null)
             .show()
     }
+
+    override fun onResume() {
+        super.onResume()
+        setNavigationItemSelection(2)
+    }
 }

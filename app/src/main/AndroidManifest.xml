@@ -24,17 +24,39 @@
         android:theme="@style/Theme.SimpleEditingPictureApp">
         <activity
             android:name=".activity.LoginActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:clearTaskOnLaunch="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".activity.MainActivity" />
-        <activity android:name=".activity.GalleryActivity" />
-        <activity android:name=".activity.EditorActivity" />
-        <activity android:name=".activity.ProfileActivity" />
+        
+        <!-- MainActivity作为应用主界面，使用singleTask模式确保只有一个实例 -->
+        <activity
+            android:name=".activity.MainActivity"
+            android:launchMode="singleTask"
+            android:clearTaskOnLaunch="false" />
+            
+        <!-- GalleryActivity使用standard模式，可以多次创建实例 -->
+        <activity
+            android:name=".activity.GalleryActivity"
+            android:launchMode="standard"
+            android:parentActivityName=".activity.MainActivity" />
+            
+        <!-- EditorActivity使用singleTask模式，编辑完成后直接返回MainActivity -->
+        <activity
+            android:name=".activity.EditorActivity"
+            android:launchMode="singleTask"
+            android:clearTaskOnLaunch="false"
+            android:parentActivityName=".activity.MainActivity" />
+            
+        <!-- ProfileActivity使用standard模式，可以多次创建实例 -->
+        <activity
+            android:name=".activity.ProfileActivity"
+            android:launchMode="standard"
+            android:parentActivityName=".activity.MainActivity" />
     </application>
 
 </manifest>

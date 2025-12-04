@@ -59,9 +59,6 @@ class CustomImageView @JvmOverloads constructor(
             // 创建一个图层来应用渐变遮罩
             val saved = canvas.saveLayer(0f, 0f, viewWidth, viewHeight, null, Canvas.ALL_SAVE_FLAG)
 
-            // 先绘制原始图片
-            super.onDraw(canvas)
-
             // 绘制渐变
             val linearGradient = LinearGradient(
                 0f, viewHeight - gradientHeight,
@@ -114,10 +111,7 @@ class CustomImageView @JvmOverloads constructor(
         
         // 创建一个图层来应用扫光效果
         val saved = canvas.saveLayer(0f, 0f, viewWidth, viewHeight, null, Canvas.ALL_SAVE_FLAG)
-        
-        // 先绘制原始图片
-        super.onDraw(canvas)
-        
+
         // 绘制扫光
         canvas.save()
         canvas.translate(sweepPosition, 0f)
