@@ -12,6 +12,7 @@ constraintlayout = "2.2.1"
 pdfDocumentService = "1.0.0-alpha11"
 compiler = "3.2.0-alpha11"
 volley = "1.2.1"
+navigationevent = "1.0.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -25,6 +26,7 @@ androidx-constraintlayout = { group = "androidx.constraintlayout", name = "const
 androidx-pdf-document-service = { group = "androidx.pdf", name = "pdf-document-service", version.ref = "pdfDocumentService" }
 androidx-compiler = { group = "androidx.databinding", name = "compiler", version.ref = "compiler" }
 volley = { group = "com.android.volley", name = "volley", version.ref = "volley" }
+androidx-navigationevent = { group = "androidx.navigationevent", name = "navigationevent", version.ref = "navigationevent" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

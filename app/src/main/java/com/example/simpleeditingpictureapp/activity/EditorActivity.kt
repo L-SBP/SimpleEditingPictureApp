@@ -1,16 +1,11 @@
 package com.example.simpleeditingpictureapp.activity
 
 import android.annotation.SuppressLint
-import android.content.ContentValues
 import android.content.Intent
-import android.graphics.Bitmap
 import android.graphics.RectF
 import android.net.Uri
 import android.opengl.GLSurfaceView
-import android.os.Build
 import android.os.Bundle
-import android.os.Environment
-import android.provider.MediaStore
 import android.util.Log
 import android.view.ScaleGestureDetector
 import android.view.View
@@ -21,18 +16,17 @@ import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.net.toUri
-import java.io.File
-import java.io.FileOutputStream
-import java.io.OutputStream
-import java.text.SimpleDateFormat
-import java.util.*
+import androidx.lifecycle.Observer
 import com.example.simpleeditingpictureapp.R
 import com.example.simpleeditingpictureapp.gesture.EditorGestureDetector
+import com.example.simpleeditingpictureapp.model.ImageEditorModel
 import com.example.simpleeditingpictureapp.opengl_es.CropFrameGLSurfaceView
 import com.example.simpleeditingpictureapp.opengl_es.EditorRenderer
+import com.example.simpleeditingpictureapp.viewmodel.EditorViewModel
 
 @SuppressLint("UseSwitchCompatOrMaterialCode")
 class EditorActivity : AppCompatActivity() {
@@ -62,21 +56,8 @@ class EditorActivity : AppCompatActivity() {
     // 缩放相关
     private var scaleEditorGestureDetector: ScaleGestureDetector? = null
 
-    // 状态变量
-    private var isCropping = false
-    private var isFiltering = false
-
-    // 裁剪框相关
-    private var previewCropRect: RectF = RectF(0f, 0f, 1f, 1f)
-
-
-    // 滤镜默认值
-    private var originalUseGrayscale = false
-    private var originalContrastValue = 1.0f
-    private var originalSaturationValue = 1.0f
-    private var useGrayscale = false
-    private var contrastValue = 1.0f
-    private var saturationValue = 1.0f
+    // ViewModel
+    private val viewModel: EditorViewModel by viewModels()
 
     @SuppressLint("ClickableViewAccessibility", "UseSwitchCompatOrMaterialCode")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,6 +74,9 @@ class EditorActivity : AppCompatActivity() {
             imageUri = intent.getStringExtra("imageUri")?.toUri()
             Log.d(tag, "imageUri: $imageUri")
 
+            // 设置ViewModel
+            viewModel.setImageUri(imageUri)
+
             // 绑定 OpenGL 画布
             Log.d(tag, "Setting up GLSurfaceView")
             glSurfaceView.setEGLContextClientVersion(2)
@@ -104,6 +88,9 @@ class EditorActivity : AppCompatActivity() {
             // 使用连续渲染模式确保图片加载后能立即显示
             glSurfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
             glSurfaceView.requestRender()
+
+            // 设置渲染器到ViewModel
+            viewModel.setRenderer(renderer)
             Log.d(tag, "EditorRenderer setup completed")
 
             // 创建缩放手势检测器
@@ -113,7 +100,8 @@ class EditorActivity : AppCompatActivity() {
 
             // 将触摸监听器设置在父容器上
             canvasContainer.setOnTouchListener { _, event ->
-                if (isCropping) {
+                val uiState = viewModel.uiState.value
+                if (uiState?.isCropping == true) {
                     // 裁剪模式下，事件只交给 CropFrameView 处理
                     cropFrameViewGLSurfaceView.onTouchEvent(event)
                 } else {
@@ -132,6 +120,7 @@ class EditorActivity : AppCompatActivity() {
 
             Log.d(tag, "Setting up listeners")
             setupListeners()
+            observeViewModel()
             Log.d(tag, "EditorActivity onCreate completed successfully")
         } catch (e: Exception) {
             Log.e(tag, "Error in EditorActivity onCreate", e)
@@ -162,69 +151,66 @@ class EditorActivity : AppCompatActivity() {
     private fun setupListeners() {
         btnBack.setOnClickListener {
             // 直接返回MainActivity，不经过GalleryActivity
-            val intent = Intent(this@EditorActivity, MainActivity::class.java)
-            // 使用FLAG_ACTIVITY_CLEAR_TOP确保返回到MainActivity而不是创建新实例
-            intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
-            startActivity(intent)
+            viewModel.navigateToMain()
             finish()
         }
 
         btnSave.setOnClickListener {
             // 保存图片
-            saveEditedImage()
+            viewModel.saveEditedImage(glSurfaceView)
         }
 
         btnCrop.setOnClickListener {
-            enterCropMode()
+            viewModel.enterCropMode()
         }
 
         btnFilter.setOnClickListener {
-            enterFilterMode()
+            viewModel.enterFilterMode()
         }
 
         btnCancel.setOnClickListener {
-            if (isCropping) {
-                exitCropMode(false)
-            } else if (isFiltering) {
-                exitFilterMode(false)
+            val uiState = viewModel.uiState.value
+            if (uiState?.isCropping == true) {
+                viewModel.exitCropMode(false)
+            } else if (uiState?.isFiltering == true) {
+                viewModel.exitFilterMode(false)
             }
         }
 
         btnConfirm.setOnClickListener {
-            if (isCropping) {
-                exitCropMode(true)
-            } else if (isFiltering) {
-                exitFilterMode(true)
+            val uiState = viewModel.uiState.value
+            if (uiState?.isCropping == true) {
+                viewModel.exitCropMode(true)
+            } else if (uiState?.isFiltering == true) {
+                viewModel.exitFilterMode(true)
             }
         }
 
         cropFrameViewGLSurfaceView.setOnCropRectChangeListener { normalizedRect ->
-            if (isCropping) {
-                previewCropRect.set(normalizedRect)
-            }
+            viewModel.updateCropRect(normalizedRect)
         }
 
         // Filter Listeners
         switchGrayscale.setOnCheckedChangeListener { _, isChecked ->
-            useGrayscale = isChecked
-            renderer.setGrayscaleEnabled(useGrayscale)
-            glSurfaceView.requestRender()
+            val currentValues = viewModel.filterValues.value ?: ImageEditorModel.FilterValues(false, 1.0f, 1.0f)
+            viewModel.updateFilterValues(currentValues.copy(grayscale = isChecked))
         }
 
         val seekBarListener = object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+
                 val value = progress / 100.0f
+                val currentValues = viewModel.filterValues.value ?: ImageEditorModel.FilterValues(false, 1.0f, 1.0f)
+
                 when (seekBar?.id) {
                     R.id.seekbar_contrast -> {
-                        contrastValue = value // 0.0 - 2.0 (max is 200, divided by 100)
-                        renderer.setContrast(contrastValue)
+                        viewModel.updateFilterValues(currentValues.copy(contrast = value))
                     }
                     R.id.seekbar_saturation -> {
-                        saturationValue = value // 0.0 - 2.0 (max is 200, divided by 100)
-                        renderer.setSaturation(saturationValue)
+                        viewModel.updateFilterValues(currentValues.copy(saturation = value))
                     }
                 }
-                glSurfaceView.requestRender()
             }
 
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
@@ -235,93 +221,73 @@ class EditorActivity : AppCompatActivity() {
         seekbarSaturation.setOnSeekBarChangeListener(seekBarListener)
     }
 
-    private fun enterCropMode() {
-        isCropping = true
-        isFiltering = false
-        renderer.setCropMode(false)
-
-        previewCropRect.set(0f, 0f, 1f, 1f)
-
-        cropFrameViewGLSurfaceView.visibility = View.VISIBLE
-        updateUiForEditing(true)
-        glSurfaceView.requestRender()
+    /**
+     * 更新滤镜值
+     */
+    private fun updateFilterValues(values: ImageEditorModel.FilterValues) {
+        viewModel.updateFilter(values)
     }
 
-    private fun exitCropMode(applyChanges: Boolean) {
-        isCropping = false
-        cropFrameViewGLSurfaceView.visibility = View.GONE
-
-        if (applyChanges) {
-            renderer.setCropMode(true)
-            renderer.setCropRect(previewCropRect)
-            Log.d(tag, "applying $previewCropRect")
-        } else {
-            renderer.setCropMode(false)
-            renderer.setCropRect(RectF(0f, 0f, 1f, 1f))
-            Log.d(tag, "reverting to original")
+    /**
+     * 观察ViewModel中的数据变化
+     */
+    private fun observeViewModel() {
+        // 观察UI状态
+        viewModel.uiState.observe(this) { uiState ->
+            updateUiForEditing(uiState.isEditing, uiState.isCropping, uiState.isFiltering, uiState.showFilterControls)
         }
 
-        updateUiForEditing(false)
-        glSurfaceView.requestRender()
-    }
+        // 观察滤镜值
+        viewModel.filterValues.observe(this) { filterValues ->
+            switchGrayscale.isChecked = filterValues.grayscale
+            seekbarContrast.progress = (filterValues.contrast * 100).toInt()
+            seekbarSaturation.progress = (filterValues.saturation * 100).toInt()
 
-    private fun enterFilterMode() {
-        isFiltering = true
-        isCropping = false
-
-        originalUseGrayscale = useGrayscale
-        originalContrastValue = contrastValue
-        originalSaturationValue = saturationValue
-
-        // 设置SeekBar的初始值
-        switchGrayscale.isChecked = useGrayscale
-        seekbarContrast.progress = (contrastValue * 100).toInt()
-        seekbarSaturation.progress = (saturationValue * 100).toInt()
-
-        updateUiForEditing(true)
-        glSurfaceView.requestRender()
-
-        Log.d(tag, "进入滤镜模式，原始状态: grayscale=$originalUseGrayscale, contrast=$originalContrastValue, saturation=$originalSaturationValue")
-    }
-
-    private fun exitFilterMode(applyChanges: Boolean) {
-        isFiltering = false
-        if (applyChanges) {
-            Log.d(tag, "应用滤镜: grayscale=$useGrayscale, contrast=$contrastValue, saturation=$saturationValue")
-        } else {
-            Log.d(tag, "取消滤镜应用，恢复原始状态: grayscale=$originalUseGrayscale, contrast=$originalContrastValue, saturation=$originalSaturationValue")
-            useGrayscale = originalUseGrayscale
-            contrastValue = originalContrastValue
-            saturationValue = originalSaturationValue
-
-            switchGrayscale.isChecked = useGrayscale
-            seekbarContrast.progress = (contrastValue * 100).toInt()
-            seekbarSaturation.progress = (saturationValue * 100).toInt()
-
-            renderer.setGrayscaleEnabled(useGrayscale)
-            renderer.setContrast(contrastValue)
-            renderer.setSaturation(saturationValue)
+            // 请求渲染
+            glSurfaceView.requestRender()
         }
 
-        updateUiForEditing(false)
-        glSurfaceView.requestRender()
+        // 观察裁剪框
+        viewModel.cropRect.observe(this) { cropRect ->
+            // 裁剪框更新会自动在CropFrameGLSurfaceView中处理
+        }
+
+        // 观察消息
+        viewModel.message.observe(this) { message ->
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        }
+
+        // 观察保存结果
+        viewModel.saveResult.observe(this) { success ->
+            if (success) {
+                // 保存成功，导航到主页
+                viewModel.navigateToMain()
+                finish()
+            }
+        }
     }
 
-    private fun updateUiForEditing(isEditing: Boolean) {
+    /**
+     * 更新UI状态
+     */
+    private fun updateUiForEditing(isEditing: Boolean, isCropping: Boolean, isFiltering: Boolean, showFilterControls: Boolean) {
         if (isEditing) {
             editorTopBar.visibility = View.GONE
             editorActionsBar.visibility = View.VISIBLE
             editorBottomTools.visibility = View.GONE
 
-            if (isFiltering) {
-                filterControlsBar.visibility = View.VISIBLE
-            } else {
+            if (isCropping) {
+                cropFrameViewGLSurfaceView.visibility = View.VISIBLE
                 filterControlsBar.visibility = View.GONE
+            } else if (isFiltering) {
+                cropFrameViewGLSurfaceView.visibility = View.GONE
+                filterControlsBar.visibility = View.VISIBLE
             }
         } else {
             editorTopBar.visibility = View.VISIBLE
             editorActionsBar.visibility = View.GONE
             editorBottomTools.visibility = View.VISIBLE
+            cropFrameViewGLSurfaceView.visibility = View.GONE
             filterControlsBar.visibility = View.GONE
         }
     }
@@ -346,88 +312,5 @@ class EditorActivity : AppCompatActivity() {
 
     fun getGLSurfaceView(): GLSurfaceView {
         return glSurfaceView
-    }
-
-    private fun saveEditedImage() {
-        // 在OpenGL线程中获取处理后的图像
-        glSurfaceView.queueEvent {
-            try {
-                // 获取处理后的图像
-                val editedBitmap = renderer.getFullBitmap(glSurfaceView.width, glSurfaceView.height)
-
-                // 回到主线程保存图像
-                runOnUiThread {
-                    if (editedBitmap != null) {
-                        saveBitmapToDevice(editedBitmap)
-                    } else {
-                        Toast.makeText(this@EditorActivity, "保存失败，请重试", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(tag, "保存图片时出错", e)
-                runOnUiThread {
-                    Toast.makeText(this@EditorActivity, "保存失败: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    private fun saveBitmapToDevice(bitmap: Bitmap) {
-        val filename = "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.jpg"
-        var fos: OutputStream? = null
-        var imageUri: Uri?
-
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Android 10及以上版本使用MediaStore保存
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
-                }
-
-                imageUri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-                fos = contentResolver.openOutputStream(imageUri!!)
-            } else {
-                // Android 10以下版本使用传统文件保存方式
-                val picturesDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "SimpleEditingPictureApp")
-                if (!picturesDir.exists()) {
-                    picturesDir.mkdirs()
-                }
-
-                val imageFile = File(picturesDir, filename)
-                fos = FileOutputStream(imageFile)
-                imageUri = Uri.fromFile(imageFile)
-            }
-
-            // 保存图像
-            fos?.use{ outputStream ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
-            }
-
-            // 通知媒体扫描器更新图库
-            imageUri?.let { uri ->
-                val scanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
-                scanIntent.data = uri
-                sendBroadcast(scanIntent)
-            }
-
-            // 显示成功消息并返回主页
-            Toast.makeText(this@EditorActivity, "图片已保存", Toast.LENGTH_SHORT).show()
-
-            // 返回主页
-            val intent = Intent(this@EditorActivity, MainActivity::class.java)
-            // 使用FLAG_ACTIVITY_CLEAR_TOP确保返回到MainActivity而不是创建新实例
-            intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
-            startActivity(intent)
-            finish()
-
-        } catch (e: Exception) {
-            Log.e(tag, "保存图片到设备时出错", e)
-            Toast.makeText(this@EditorActivity, "保存失败: ${e.message}", Toast.LENGTH_SHORT).show()
-        } finally {
-            fos?.close()
-            bitmap.recycle()
-        }
     }
 }

@@ -48,6 +48,7 @@ dependencies {
 
     // 修复 Glide 依赖配置
     implementation("com.github.bumptech.glide:glide:4.16.0")
+    implementation(libs.androidx.navigationevent)
 
     // 使用 kapt 进行注解处理
     kapt("com.github.bumptech.glide:compiler:4.16.0")
