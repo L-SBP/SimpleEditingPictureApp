@@ -8,7 +8,7 @@ import java.nio.ByteOrder
 
 
 object TextureHelp {
-    fun loadTexture(resource: Bitmap) : Int {
+    fun loadTexture(context: Context, resource: Bitmap) : Int {
         val textureIds = IntArray(1)
 
         // 申请纹理ID
@@ -49,7 +49,7 @@ object TextureHelp {
         )
         GLES20.glGenerateMipmap(GLES20.GL_TEXTURE_2D)
 
-        resource.recycle()
+        // 不在这里回收Bitmap，让Glide来管理Bitmap的生命周期
         return textureId
     }
 

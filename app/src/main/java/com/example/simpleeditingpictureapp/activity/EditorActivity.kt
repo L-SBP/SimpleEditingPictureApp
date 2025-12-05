@@ -111,7 +111,7 @@ class EditorActivity : AppCompatActivity() {
             editorGestureDetector = EditorGestureDetector(renderer, glSurfaceView)
             scaleEditorGestureDetector = ScaleGestureDetector(this, editorGestureDetector)
 
-            // 关键改动：将触摸监听器设置在父容器上
+            // 将触摸监听器设置在父容器上
             canvasContainer.setOnTouchListener { _, event ->
                 if (isCropping) {
                     // 裁剪模式下，事件只交给 CropFrameView 处理
