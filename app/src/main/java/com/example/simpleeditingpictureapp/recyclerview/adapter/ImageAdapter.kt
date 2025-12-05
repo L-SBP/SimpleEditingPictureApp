@@ -12,7 +12,6 @@ import com.example.simpleeditingpictureapp.recyclerview.viewholder.ImageViewHold
 class ImageAdapter(private val imageList: MutableList<ImageBean>) : RecyclerView.Adapter<ImageViewHolder>() {
     private var selectedPosition = -1
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ImageViewHolder {
-        // 使用专门的item布局而不是直接创建ImageView
         val view = LayoutInflater.from(parent.context).inflate(R.layout.item_gallery_image, parent, false)
         return ImageViewHolder(view)
     }
@@ -32,7 +31,7 @@ class ImageAdapter(private val imageList: MutableList<ImageBean>) : RecyclerView
         // 为ImageView设置点击监听器
         holder.imageView.setOnClickListener {
             // 获取当前holder的实际位置
-            val currentPosition = holder.adapterPosition
+            val currentPosition = holder.bindingAdapterPosition
             if (currentPosition == RecyclerView.NO_POSITION) {
                 return@setOnClickListener
             }

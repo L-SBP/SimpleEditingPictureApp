@@ -2,15 +2,16 @@
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/white">
 
+    <!-- 主顶部操作栏 -->
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/editor_top_bar"
         android:layout_width="match_parent"
         android:layout_height="56dp"
-
         app:layout_constraintTop_toTopOf="parent">
 
         <ImageView
@@ -19,38 +20,92 @@
             android:layout_height="24dp"
             android:layout_marginStart="16dp"
             android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true"
             app:tint="@color/black"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toBottomOf="parent"/>
 
-        <TextView
+        <ImageView
             android:id="@+id/btn_save"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
             android:layout_marginEnd="16dp"
-            android:text="保存"
-            android:textColor="@color/black"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:gravity="center"
-            android:background="@drawable/bg_btn_rounded"
+            android:src="@android:drawable/ic_menu_save"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toBottomOf="parent"/>
     </androidx.constraintlayout.widget.ConstraintLayout>
 
-    <android.opengl.GLSurfaceView
-        android:id="@+id/gl_canvas"
+    <!-- 编辑模式下的顶部操作栏 (裁剪, 滤镜等) -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/editor_actions_bar"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <TextView
+            android:id="@+id/btn_cancel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="取消"
+            android:textColor="@color/black"
+            android:textSize="18sp"
+            android:padding="8dp"
+            android:layout_marginStart="16dp"
+            android:background="?android:attr/selectableItemBackground"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"/>
+
+        <TextView
+            android:id="@+id/btn_confirm"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="确认"
+            android:textColor="@color/black"
+            android:textSize="18sp"
+            android:padding="8dp"
+            android:layout_marginEnd="16dp"
+            android:background="?android:attr/selectableItemBackground"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"/>
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
+    <!-- 画布容器 (用于统一处理触摸事件) -->
+    <FrameLayout
+        android:id="@+id/canvas_container"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:layout_margin="20dp"
         app:layout_constraintDimensionRatio="H,1:1"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/editor_top_bar"
-        app:layout_constraintBottom_toTopOf="@id/editor_bottom_tools" />
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent">
 
+        <android.opengl.GLSurfaceView
+            android:id="@+id/gl_canvas"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <com.example.simpleeditingpictureapp.opengl_es.CropFrameGLSurfaceView
+            android:id="@+id/crop_frame_gl_surface"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+    </FrameLayout>
+
+    <!-- 主底部工具栏 -->
     <LinearLayout
         android:id="@+id/editor_bottom_tools"
         android:layout_width="match_parent"
@@ -69,7 +124,10 @@
             android:text="裁剪"
             android:textColor="@color/black"
             android:drawableTop="@android:drawable/ic_menu_crop"
-            android:drawableTint="@color/black" />
+            app:drawableTint="@color/black"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true" />
 
         <TextView
             android:id="@+id/tool_filter"
@@ -80,8 +138,56 @@
             android:text="滤镜"
             android:textColor="@color/black"
             android:drawableTop="@android:drawable/ic_menu_view"
-            android:drawableTint="@color/black" />
+            app:drawableTint="@color/black"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
 
+    <!-- 滤镜调节面板 -->
+    <LinearLayout
+        android:id="@+id/filter_controls_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:background="@color/light_orange"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        tools:ignore="UseSwitchCompatOrMaterialXml">
+
+        <Switch
+            android:id="@+id/switch_grayscale"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="灰色滤镜"
+            android:textColor="@color/black"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="对比度"
+            android:textColor="@color/black"
+            android:layout_marginTop="8dp"/>
+        <SeekBar
+            android:id="@+id/seekbar_contrast"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="200"
+            android:progress="100"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="饱和度"
+            android:textColor="@color/black"
+            android:layout_marginTop="8dp"/>
+        <SeekBar
+            android:id="@+id/seekbar_saturation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="200"
+            android:progress="100"/>
     </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
