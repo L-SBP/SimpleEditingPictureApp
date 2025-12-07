@@ -48,6 +48,21 @@ class CropFrameGLSurfaceView @JvmOverloads constructor(
 
     private var dragState = DragState.NONE
 
+    // 裁剪比例锁定
+    private var aspectRatioLock: Float? = null
+
+    // 预设比例
+    enum class AspectRatio(val displayName: String, val ratio: Float?) {
+        FREE("自由", null),
+        SQUARE("1:1", 1.0f),
+        RATIO_3_4("3:4", 3f/4f),
+        RATIO_4_3("4:3", 4f/3f),
+        RATIO_9_16("9:16", 9f/16f),
+        RATIO_16_9("16:9", 16f/9f)
+    }
+
+    private var currentAspectRatio = AspectRatio.FREE
+
     init {
         // 配置透明背景
         setEGLConfigChooser(8, 8, 8, 8, 16, 0)   //
@@ -122,6 +137,75 @@ class CropFrameGLSurfaceView @JvmOverloads constructor(
         newTop = max(0f, newTop)                    // 现在是触摸的坐标，以左上角为原点，之后才进行y轴反转
         newBottom = min(height.toFloat(), newBottom)
 
+        // 如果有锁定比例，调整裁剪框以保持比例
+        aspectRatioLock?.let { ratio ->
+            when(dragState) {
+                DragState.LEFT, DragState.RIGHT -> {
+                    // 调整高度以保持比例
+                    val newWidth = newRight - newLeft
+                    val newHeight = newWidth / ratio
+                    val centerY = (cropTop + cropBottom) / 2
+                    newTop = centerY - newHeight / 2
+                    newBottom = centerY + newHeight / 2
+                }
+                DragState.TOP, DragState.BOTTOM -> {
+                    // 调整宽度以保持比例
+                    val newHeight = newBottom - newTop
+                    val newWidth = newHeight * ratio
+                    val centerX = (cropLeft + cropRight) / 2
+                    newLeft = centerX - newWidth / 2
+                    newRight = centerX + newWidth / 2
+                }
+                DragState.LEFT_TOP -> {
+                    // 根据拖动方向调整
+                    val newWidth = newRight - newLeft
+                    val newHeight = newWidth / ratio
+                    newBottom = cropBottom
+                    newTop = newBottom - newHeight
+                }
+                DragState.RIGHT_TOP -> {
+                    // 根据拖动方向调整
+                    val newWidth = newRight - newLeft
+                    val newHeight = newWidth / ratio
+                    newBottom = cropBottom
+                    newTop = newBottom - newHeight
+                }
+                DragState.LEFT_BOTTOM -> {
+                    // 根据拖动方向调整
+                    val newWidth = newRight - newLeft
+                    val newHeight = newWidth / ratio
+                    newTop = cropTop
+                    newBottom = newTop + newHeight
+                }
+                DragState.RIGHT_BOTTOM -> {
+                    // 根据拖动方向调整
+                    val newWidth = newRight - newLeft
+                    val newHeight = newWidth / ratio
+                    newTop = cropTop
+                    newBottom = newTop + newHeight
+                }
+                else -> {}
+            }
+
+            // 确保不超出边界
+            if (newLeft < 0) {
+                newLeft = 0f
+                newRight = (newBottom - newTop) * ratio
+            }
+            if (newRight > width) {
+                newRight = width.toFloat()
+                newLeft = newRight - (newBottom - newTop) * ratio
+            }
+            if (newTop < 0) {
+                newTop = 0f
+                newBottom = (newRight - newLeft) / ratio
+            }
+            if (newBottom > height) {
+                newBottom = height.toFloat()
+                newTop = newBottom - (newRight - newLeft) / ratio
+            }
+        }
+
         // 宽高最小限制
         if (newRight - newLeft < minCropSize) {
             newLeft = if (dragState in listOf(DragState.LEFT, DragState.LEFT_TOP, DragState.LEFT_BOTTOM)) {
@@ -130,6 +214,14 @@ class CropFrameGLSurfaceView @JvmOverloads constructor(
                 newLeft
             }
             newRight = newLeft + minCropSize
+
+            // 如果有比例锁定，调整高度
+            aspectRatioLock?.let { ratio ->
+                val newHeight = minCropSize / ratio
+                val centerY = (newTop + newBottom) / 2
+                newTop = centerY - newHeight / 2
+                newBottom = centerY + newHeight / 2
+            }
         }
         if (newBottom - newTop < minCropSize) {
             newTop = if (dragState in listOf(DragState.TOP, DragState.LEFT_TOP, DragState.RIGHT_TOP)) {
@@ -138,6 +230,14 @@ class CropFrameGLSurfaceView @JvmOverloads constructor(
                 newTop
             }
             newBottom = newTop + minCropSize
+
+            // 如果有比例锁定，调整宽度
+            aspectRatioLock?.let { ratio ->
+                val newWidth = minCropSize * ratio
+                val centerX = (newLeft + newRight) / 2
+                newLeft = centerX - newWidth / 2
+                newRight = centerX + newWidth / 2
+            }
         }
 
         // 更新坐标
@@ -205,6 +305,67 @@ class CropFrameGLSurfaceView @JvmOverloads constructor(
         rect.right = cropRight / width
         rect.bottom = cropBottom / height
         return rect
+    }
+
+    /**
+     * 设置裁剪比例
+     * @param aspectRatio 裁剪比例枚举
+     */
+    fun setAspectRatio(aspectRatio: AspectRatio) {
+        currentAspectRatio = aspectRatio
+        aspectRatioLock = aspectRatio.ratio
+
+        // 如果设置了固定比例，调整当前裁剪框
+        aspectRatioLock?.let { ratio ->
+            val centerX = (cropLeft + cropRight) / 2
+            val centerY = (cropTop + cropBottom) / 2
+
+            // 计算当前裁剪框的宽高
+            val currentWidth = cropRight - cropLeft
+            val currentHeight = cropBottom - cropTop
+
+            // 根据比例调整尺寸，保持中心点不变
+            if (currentWidth / currentHeight > ratio) {
+                // 当前裁剪框太宽，以高度为基准调整宽度
+                val newWidth = currentHeight * ratio
+                cropLeft = centerX - newWidth / 2
+                cropRight = centerX + newWidth / 2
+            } else {
+                // 当前裁剪框太高，以宽度为基准调整高度
+                val newHeight = currentWidth / ratio
+                cropTop = centerY - newHeight / 2
+                cropBottom = centerY + newHeight / 2
+            }
+
+            // 确保不超出边界
+            if (cropLeft < 0) {
+                cropLeft = 0f
+                cropRight = (cropBottom - cropTop) * ratio
+            }
+            if (cropRight > width) {
+                cropRight = width.toFloat()
+                cropLeft = cropRight - (cropBottom - cropTop) * ratio
+            }
+            if (cropTop < 0) {
+                cropTop = 0f
+                cropBottom = (cropRight - cropLeft) / ratio
+            }
+            if (cropBottom > height) {
+                cropBottom = height.toFloat()
+                cropTop = cropBottom - (cropRight - cropLeft) / ratio
+            }
+        }
+
+        updateRenderCropFrameRect()
+        cropRectChangeListener?.onCropRectChanged(getNormalizedCropFrameRect())
+        requestRender()
+    }
+
+    /**
+     * 获取当前裁剪比例
+     */
+    fun getCurrentAspectRatio(): AspectRatio {
+        return currentAspectRatio
     }
 
 }
