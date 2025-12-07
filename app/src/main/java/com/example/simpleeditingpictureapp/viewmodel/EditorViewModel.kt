@@ -401,9 +401,18 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
 
             // 通知媒体扫描器更新图库
             imageUri?.let { uri ->
-                val scanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
-                scanIntent.data = uri
-                context.sendBroadcast(scanIntent)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    // Android 10及以上版本使用MediaStore API
+                    val values = android.content.ContentValues().apply {
+                        put(android.provider.MediaStore.Images.Media.IS_PENDING, 0)
+                    }
+                    context.contentResolver.update(uri, values, null, null)
+                } else {
+                    // Android 10以下版本使用广播方式
+                    val scanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
+                    scanIntent.data = uri
+                    context.sendBroadcast(scanIntent)
+                }
             }
 
             // 显示成功消息
