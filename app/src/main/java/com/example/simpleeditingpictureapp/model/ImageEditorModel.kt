@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.RectF
 import android.net.Uri
-import android.opengl.Matrix
 import android.util.Log
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
@@ -15,6 +14,7 @@ import kotlinx.coroutines.withContext
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
 import kotlinx.coroutines.Dispatchers
+import kotlin.math.max
 
 /**
  * 图片编辑器数据模型
@@ -27,18 +27,20 @@ class ImageEditorModel {
     var imageUri: Uri? = null
 
     // 图片Bitmap
-    var imageBitmap: Bitmap? = null
+    var originalBitmap: Bitmap? = null
 
     // 图片尺寸
-    var imageWidth = 0
-    var imageHeight = 0
+    var originalImageWidth = 0
+    var originalImageHeight = 0
+    var currentCropWidth = 0
+    var currentCropHeight = 0
 
     // 编辑状态，用来切换UI
     var isCropping = false
     var isFiltering = false
 
     // 裁剪框相关
-    var previewCropRect: RectF = RectF(0f, 0f, 1f, 1f)
+    var cropFrameRect: RectF = RectF(0f, 0f, 1f, 1f)
 
     // 裁剪纹理矩阵
     private var cropTexMatrix: FloatArray = FloatArray(16)
@@ -82,9 +84,13 @@ class ImageEditorModel {
                         dataSource: DataSource,
                         isFirstResource: Boolean
                     ): Boolean {
-                        imageWidth = resource.width
-                        imageHeight = resource.height
-                        imageBitmap = resource
+                        originalImageWidth = resource.width
+                        originalImageHeight = resource.height
+                        originalBitmap = resource
+
+                        currentCropWidth = originalImageWidth
+                        currentCropHeight = originalImageHeight
+
                         Log.d(tag, "图片加载成功")
                         // 创建一个副本，避免资源被回收
                         val bitmapCopy = resource.copy(resource.config ?: Bitmap.Config.ARGB_8888, false)
@@ -94,13 +100,6 @@ class ImageEditorModel {
                 })
                 .submit()
         }
-    }
-
-    /**
-     * 重置裁剪框
-     */
-    fun resetCropRect() {
-        previewCropRect.set(0f, 0f, 1f, 1f)
     }
 
     /**
@@ -176,13 +175,34 @@ class ImageEditorModel {
     fun applyCropToRenderer(renderer: EditorRenderer, apply: Boolean) {
         if (apply) {
             renderer.setCropMode(true)
-            renderer.setCropRect(previewCropRect)
-            Log.d(tag, "applying $previewCropRect")
+            renderer.setCropRect(cropFrameRect)
+            Log.d(tag, "applying $cropFrameRect")
+
+            // 计算裁剪后的图片尺寸
+            var cropWidth = (originalImageWidth * cropFrameRect.width()).toInt()
+            var cropHeight = (originalImageHeight * cropFrameRect.height()).toInt()
+
+            // 确保裁剪后的图片至少有1像素的高度和宽度
+            cropWidth = max(1, cropWidth)
+            cropHeight = max(1, cropHeight)
+
+            // 更新图片尺寸
+            currentCropWidth = cropWidth
+            currentCropHeight = cropHeight
+
+            // 更新渲染器的图片尺寸
+            renderer.updateImageDimensions(currentCropWidth, currentCropHeight)
+
+            Log.d(tag, "裁剪后图片尺寸更新为: ${cropWidth}x${cropHeight}")
         } else {
             renderer.setCropMode(false)
             renderer.setCropRect(RectF(0f, 0f, 1f, 1f))
             Log.d(tag, "reverting to original")
         }
+    }
+
+    fun applyImageDimensions(renderer: EditorRenderer, imageWidth: Int, imageHeight: Int) {
+        renderer.updateImageDimensions(imageWidth, imageHeight)
     }
 
     /**

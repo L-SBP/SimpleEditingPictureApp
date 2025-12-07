@@ -1,7 +1,6 @@
 package com.example.simpleeditingpictureapp.viewmodel
 
 import android.app.Application
-import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.RectF
@@ -9,8 +8,6 @@ import android.net.Uri
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
 import android.util.Log
-import android.view.View
-import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -55,10 +52,6 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
     private val _history = MutableLiveData<ConcurrentLinkedDeque<EditorHistory>>(ConcurrentLinkedDeque())
     private val _redoHistory = MutableLiveData<ConcurrentLinkedDeque<EditorHistory>>(ConcurrentLinkedDeque())
 
-    // 点击undo/redo后应用的历史操作
-    private val _applyAction = MutableLiveData<EditorHistory>()
-    val applyAction = MutableLiveData<EditorHistory>()
-
     // 滤镜值LiveData
     private val _filterValues = MutableLiveData<ImageEditorModel.FilterValues>()
     val filterValues: LiveData<ImageEditorModel.FilterValues> = _filterValues
@@ -80,6 +73,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
     // 保存结果LiveData
     private val _saveResult = MutableLiveData<Boolean>()
     val saveResult: LiveData<Boolean> = _saveResult
+
+    // 显示模式
+    private val _displayMode = MutableLiveData(EditorRenderer.DisplayMode.FIT_CENTER)
+    val displayMode: LiveData<EditorRenderer.DisplayMode> = _displayMode
 
     init {
         // 初始化UI状态
@@ -130,9 +127,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
     fun enterCropMode() {
         model.isCropping = true
         model.isFiltering = false
-        model.resetCropRect()
 
-        _cropRect.value = model.previewCropRect
+        _cropRect.value = model.cropFrameRect
         _uiState.value = _uiState.value?.copy(
             isEditing = true,
             isCropping = true,
@@ -140,6 +136,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
             showFilterControls = false
         )
 
+        // 切换到裁剪显示模式
+        _displayMode.value = EditorRenderer.DisplayMode.CROP_FILL
         renderer?.setCropMode(false)
     }
 
@@ -151,7 +149,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
 
         model.applyCropToRenderer(renderer ?: return, applyChanges)
         if (applyChanges) {
-            saveEditorHistory(EditorHistory(cropRect = model.previewCropRect, cropTexMatrix = model.getCropTexMatrix(), filterValues = model.getCurrentFilterValues()))
+            saveEditorHistory(cropRect = model.cropFrameRect, cropTexMatrix = model.getCropTexMatrix(), filterValues = model.getCurrentFilterValues())
         }
 
         _uiState.value = _uiState.value?.copy(
@@ -160,6 +158,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
             isFiltering = false,
             showFilterControls = false
         )
+
+        // 恢复到居中适配显示模式
+        _displayMode.value = EditorRenderer.DisplayMode.FIT_CENTER
     }
 
     /**
@@ -198,7 +199,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
             // 应用到渲染器
             model.applyFiltersToRenderer(renderer ?: return)
         } else {
-            saveEditorHistory(EditorHistory(cropRect = model.previewCropRect, cropTexMatrix = model.getCropTexMatrix(), filterValues = model.getCurrentFilterValues()))
+            saveEditorHistory(cropRect = model.cropFrameRect, cropTexMatrix = model.getCropTexMatrix(), filterValues = model.getCurrentFilterValues())
         }
 
         _uiState.value = _uiState.value?.copy(
@@ -212,9 +213,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
     /**
      * 更新裁剪框
      */
-    fun updateCropRect(rect: RectF) {
+    fun updateCropFrameRect(rect: RectF) {
         if (model.isCropping) {
-            model.previewCropRect.set(rect)
+            model.cropFrameRect.set(rect)
             _cropRect.value = rect
         }
     }
@@ -245,15 +246,37 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
         }
     }
 
+    /**
+     * 保存编辑历史（包含图片尺寸）
+     */
+    private fun saveEditorHistory(cropRect: RectF, cropTexMatrix: FloatArray, filterValues: ImageEditorModel.FilterValues) {
+        val history = EditorHistory(
+            cropRect = cropRect,
+            cropTexMatrix = cropTexMatrix,
+            filterValues = filterValues,
+            imageWidth = model.currentCropWidth,
+            imageHeight = model.currentCropHeight
+        )
+        saveEditorHistory(history)
+    }
+
     private fun applyHistoryAction(action: EditorHistory) {
+        // 更新图片尺寸
+        model.currentCropWidth = action.imageWidth
+        model.currentCropHeight = action.imageHeight
         // 更新裁剪框状态
-        updateCropRect(action.cropRect)
+        updateCropFrameRect(action.cropRect)
         // 更新滤镜状态
         updateFilter(action.filterValues)
         // 同步到渲染器
         model.applyCropToRenderer(renderer ?: return, true)
         model.applyCropTexMatrixToRenderer(renderer ?: return, action.cropTexMatrix)
         model.applyFiltersToRenderer(renderer ?: return)
+        model.applyImageDimensions(renderer ?: return, action.imageWidth, action.imageHeight)
+
+        // 确保显示模式为FIT_CENTER，避免图片变形
+        _displayMode.value = EditorRenderer.DisplayMode.FIT_CENTER
+        renderer?.setDisplayMode(EditorRenderer.DisplayMode.FIT_CENTER)
     }
 
     fun undo() {
@@ -279,7 +302,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
                 applyHistoryAction(EditorHistory(
                     cropRect = RectF(0f, 0f, 1f, 1f),
                     cropTexMatrix = FloatArray(16).apply { Matrix.setIdentityM(this, 0) },
-                    filterValues = ImageEditorModel.FilterValues(false, 1.0f, 1.0f)
+                    filterValues = ImageEditorModel.FilterValues(false, 1.0f, 1.0f),
+                    imageWidth = _bitmap.value!!.width,
+                    imageHeight = bitmap.value!!.height
                 ))
             }
 
@@ -452,8 +477,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
     override fun onCleared() {
         super.onCleared()
         // 释放bitmap资源
-        model.imageBitmap?.recycle()
-        model.imageBitmap = null
+        model.originalBitmap?.recycle()
+        model.originalBitmap = null
         Log.d(tag, "EditorViewModel已销毁，bitmap资源已释放")
     }
 
@@ -476,7 +501,9 @@ data class EditorUiState(
 data class EditorHistory(
     val cropRect: RectF,
     val cropTexMatrix: FloatArray,
-    val filterValues: ImageEditorModel.FilterValues
+    val filterValues: ImageEditorModel.FilterValues,
+    val imageWidth: Int,
+    val imageHeight: Int
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -487,6 +514,8 @@ data class EditorHistory(
         if (cropRect != other.cropRect) return false
         if (!cropTexMatrix.contentEquals(other.cropTexMatrix)) return false
         if (filterValues != other.filterValues) return false
+        if (imageWidth != other.imageWidth) return false
+        if (imageHeight != other.imageHeight) return false
 
         return true
     }
@@ -495,6 +524,8 @@ data class EditorHistory(
         var result = cropRect.hashCode()
         result = 31 * result + cropTexMatrix.contentHashCode()
         result = 31 * result + filterValues.hashCode()
+        result = 31 * result + imageWidth
+        result = 31 * result + imageHeight
         return result
     }
 }

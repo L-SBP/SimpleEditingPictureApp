@@ -36,9 +36,24 @@ class EditorRenderer (
     private var cropMatrixChangeListener: CropMatrixChangeListener? = null
     private var viewModel: EditorViewModel? = null
 
+    // 图片宽高比和显示模式
+    private var imageAspectRatio = 1.0f
+    private var displayMode = DisplayMode.FIT_CENTER // 默认居中适配
+
+    // 显示区域计算
+    private var displayRect = RectF(0f, 0f, 1f, 1f)
+
+    // 显示模式枚举
+    enum class DisplayMode {
+        FIT_CENTER,     // 保持比例，居中显示（可能有黑边）
+        CROP_FILL,      // 裁剪模式：填满整个视图
+        ORIGINAL        // 原始比例，不缩放
+    }
+
     // --- GL Program & Data ---
     private var program: Int = -1
     private var textureId = -1
+    private var vertexVboId = -1
     private val vertexData = floatArrayOf(
         0.0f, 0.0f, // 屏幕左上角
         0.0f, 1.0f, // 屏幕左下角
@@ -114,7 +129,7 @@ class EditorRenderer (
         // 如果已有bitmap，重新加载纹理
         if (imageWidth > 0 && imageHeight > 0) {
             // 从ViewModel获取ImageEditorModel中的bitmap
-            val bitmap = viewModel?.model?.imageBitmap
+            val bitmap = viewModel?.model?.originalBitmap
             if (bitmap != null) {
                 textureId = TextureHelp.loadTexture(context, bitmap)
                 Log.d(tag, "重新加载纹理，textureId: $textureId")
@@ -279,6 +294,100 @@ class EditorRenderer (
         System.arraycopy(matrix, 0, cropTexMatrix, 0, matrix.size)
     }
 
+    /**
+     * 根据显示模式计算显示区域
+     */
+    private fun updateDisplayRect() {
+        val viewAspectRatio = 1.0f // 因为是正方形
+
+        when (displayMode) {
+            DisplayMode.FIT_CENTER -> {
+                // 保持比例，居中适配
+                if (imageAspectRatio > viewAspectRatio) {
+                    // 图片更宽，按宽度适配
+                    val scale = 1.0f / imageAspectRatio
+                    val offsetY = (1.0f - scale) / 2.0f
+                    displayRect.set(0f, offsetY, 1f, offsetY + scale)
+                } else {
+                    // 图片更高，按高度适配
+                    val scale = imageAspectRatio
+                    val offsetX = (1.0f - scale) / 2.0f
+                    displayRect.set(offsetX, 0f, offsetX + scale, 1.0f)
+                }
+            }
+            DisplayMode.CROP_FILL -> {
+                // 填满整个视图（可能变形）
+                displayRect.set(0f, 0f, 1f, 1f)
+            }
+            DisplayMode.ORIGINAL -> {
+                // 原始比例，不缩放（从左上角开始）
+                displayRect.set(0f, 0f, 
+                    min(1.0f, imageAspectRatio), 
+                    min(1.0f, 1.0f / imageAspectRatio))
+            }
+        }
+
+        // 更新顶点数据
+        updateVertexData()
+    }
+
+    /**
+     * 更新顶点数据
+     */
+    private fun updateVertexData() {
+        // 根据displayRect更新vertexData
+        vertexData[0] = displayRect.left
+        vertexData[1] = displayRect.top
+        vertexData[2] = displayRect.left
+        vertexData[3] = displayRect.bottom
+        vertexData[4] = displayRect.right
+        vertexData[5] = displayRect.top
+        vertexData[6] = displayRect.right
+        vertexData[7] = displayRect.bottom
+
+        // 更新VBO
+        updateVertexBuffer()
+    }
+
+    /**
+     * 更新VBO
+     */
+    private fun updateVertexBuffer() {
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vertexVboId)
+        GLES20.glBufferData(
+            GLES20.GL_ARRAY_BUFFER,
+            vertexData.size * Float.SIZE_BYTES,
+            FloatBuffer.wrap(vertexData),
+            GLES20.GL_STATIC_DRAW
+        )
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
+    }
+
+    /**
+     * 设置显示模式
+     */
+    fun setDisplayMode(mode: DisplayMode) {
+        displayMode = mode
+        updateDisplayRect()
+        (context as EditorActivity).getGLSurfaceView().requestRender()
+    }
+
+    /**
+     * 更新图片尺寸和宽高比
+     */
+    fun updateImageDimensions(width: Int, height: Int) {
+        imageWidth = width
+        imageHeight = height
+        imageAspectRatio = width.toFloat() / height.toFloat()
+        Log.d(tag, "更新图片尺寸: ${width}x${height}, 宽高比: $imageAspectRatio")
+
+        // 根据新的宽高比更新显示区域
+        updateDisplayRect()
+
+        // 请求渲染
+        (context as EditorActivity).getGLSurfaceView().requestRender()
+    }
+
     private fun createProgram() {
         Log.d(tag, "开始创建着色器程序")
 
@@ -331,8 +440,9 @@ class EditorRenderer (
         val vertexVbo = IntArray(1)
         // 申请Vbo Id
         GLES20.glGenBuffers(1, vertexVbo, 0)
+        vertexVboId = vertexVbo[0]
         // 绑定Vbo
-        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vertexVbo[0])
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vertexVboId)
         // 将vertexData 传递给VBO
         GLES20.glBufferData(
             GLES20.GL_ARRAY_BUFFER,
@@ -384,6 +494,14 @@ class EditorRenderer (
 
         imageWidth = bitmap.width
         imageHeight = bitmap.height
+
+        // 计算图片宽高比
+        imageAspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
+        Log.d(tag, "图片宽高比: $imageAspectRatio")
+
+        // 根据显示模式计算显示区域
+        updateDisplayRect()
+
         textureId = TextureHelp.loadTexture(context, bitmap)
         Log.d(tag, "textureId: $textureId")
 
@@ -392,6 +510,10 @@ class EditorRenderer (
 
     fun release() {
         TextureHelp.deleteTexture(textureId)
+        if (vertexVboId != -1) {
+            GLES20.glDeleteBuffers(1, intArrayOf(vertexVboId), 0)
+            vertexVboId = -1
+        }
         if (program != 0) {
             GLES20.glDeleteProgram(program)
         }

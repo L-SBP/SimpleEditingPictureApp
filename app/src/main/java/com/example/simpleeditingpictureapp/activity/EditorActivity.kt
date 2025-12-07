@@ -1,8 +1,6 @@
 package com.example.simpleeditingpictureapp.activity
 
 import android.annotation.SuppressLint
-import android.content.Intent
-import android.graphics.RectF
 import android.net.Uri
 import android.opengl.GLSurfaceView
 import android.os.Bundle
@@ -20,7 +18,6 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.net.toUri
-import androidx.lifecycle.Observer
 import com.example.simpleeditingpictureapp.R
 import com.example.simpleeditingpictureapp.gesture.EditorGestureDetector
 import com.example.simpleeditingpictureapp.model.ImageEditorModel
@@ -222,7 +219,7 @@ class EditorActivity : AppCompatActivity() {
         }
 
         cropFrameViewGLSurfaceView.setOnCropRectChangeListener { normalizedRect ->
-            viewModel.updateCropRect(normalizedRect)
+            viewModel.updateCropFrameRect(normalizedRect)
         }
 
         // Filter Listeners
@@ -320,6 +317,13 @@ class EditorActivity : AppCompatActivity() {
                 // 保存成功，导航到主页
                 viewModel.navigateToMain()
                 finish()
+            }
+        }
+
+        // 观察显示模式变化
+        viewModel.displayMode.observe(this) { mode ->
+            glSurfaceView.queueEvent {
+                renderer.setDisplayMode(mode)
             }
         }
     }

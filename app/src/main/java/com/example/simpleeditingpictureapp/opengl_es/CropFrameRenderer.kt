@@ -33,7 +33,6 @@ class CropFrameRenderer(
     // 投影矩阵
     private val mProjectMatrix = FloatArray(16)
 
-
     // 裁剪框
     private var cropFrameRect: RectF = RectF(0.1f, 0.1f, 0.9f, 0.9f)
 
