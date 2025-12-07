@@ -165,6 +165,9 @@ class EditorRenderer (
         Matrix.translateM(mModelMatrix, 0, -mFocusXInGl, -mFocusYInGl, 0.0f)
         // 应用平移
         Matrix.translateM(mModelMatrix, 0, mPanX, mPanY, 0.0f)
+
+        checkAndAdjustPan()
+
         Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, mModelMatrix, 0)
         GLES20.glUniformMatrix4fv(uMatrixLoc, 1, false, mvpMatrix, 0)
 
@@ -214,9 +217,24 @@ class EditorRenderer (
 
 
     fun applyScaling(scale: Float, focusX: Float, focusY: Float){
+        val previousScale = mScale
         mScale = scale
+
+        // 计算焦点在OpenGL坐标系中的位置
         mFocusXInGl = focusX / mViewWidth
-        mFocusYInGl = (mViewHeight - focusY) / mViewHeight
+        mFocusYInGl = 1.0f - focusY / mViewHeight  // OpenGL Y轴是反的
+
+        // 调整平移量以保持焦点位置
+        if (previousScale > 0f && scale > 0f) {
+            val scaleChange = scale / previousScale
+
+            // 简单的缩放逻辑：以焦点为中心缩放
+            mPanX = mFocusXInGl + (mPanX - mFocusXInGl) * scaleChange
+            mPanY = mFocusYInGl + (mPanY - mFocusYInGl) * scaleChange
+        }
+
+        // 限制平移范围
+        limitPan()
     }
 
     fun applyPan(dx: Float, dy: Float) {
@@ -229,9 +247,29 @@ class EditorRenderer (
         mPanY += dyGl / mScale
 
         // 限制平移范围
-        val maxPanX = 0.5f * (mScale - 1.0f)
-        val maxPanY = 0.5f * (mScale - 1.0f)
+        limitPan()
+    }
 
+    /**
+     * 限制平移范围，确保图片不会超出边界
+     */
+    private fun limitPan() {
+        // 如果缩放因子为1.0（原始大小），则不需要平移
+        if (mScale <= 1.0f) {
+            mPanX = 0f
+            mPanY = 0f
+            return
+        }
+
+        // 计算图片在屏幕上的实际显示大小
+        val imageDisplayWidth = imageAspectRatio * mScale
+        val imageDisplayHeight = 1.0f * mScale
+
+        // 计算最大平移范围
+        val maxPanX = max(0f, (imageDisplayWidth - 1.0f) / 2.0f)
+        val maxPanY = max(0f, (imageDisplayHeight - 1.0f) / 2.0f)
+
+        // 应用限制
         mPanX = max(-maxPanX, min(maxPanX, mPanX))
         mPanY = max(-maxPanY, min(maxPanY, mPanY))
     }
@@ -576,5 +614,31 @@ class EditorRenderer (
         // 翻转图像（OpenGL的Y轴与Android的Y轴相反）
         val flipMatrix = android.graphics.Matrix().apply { postScale(1f, -1f) }
         return Bitmap.createBitmap(bitmap, 0, 0, viewWidth, viewHeight, flipMatrix, true)
+    }
+
+
+    private fun checkAndAdjustPan() {
+        // 如果缩放因子为1.0（原始大小），则居中显示
+        if (mScale <= 1.0f) {
+            mPanX = 0f
+            mPanY = 0f
+            return
+        }
+
+        // 计算图片实际显示大小
+        val imageDisplayWidth = imageAspectRatio * mScale
+        val imageDisplayHeight = 1.0f * mScale
+
+        // 计算边界
+        val leftBound = -max(0f, (imageDisplayWidth - 1.0f) / 2.0f)
+        val rightBound = max(0f, (imageDisplayWidth - 1.0f) / 2.0f)
+        val topBound = -max(0f, (imageDisplayHeight - 1.0f) / 2.0f)
+        val bottomBound = max(0f, (imageDisplayHeight - 1.0f) / 2.0f)
+
+        // 如果当前平移超出边界，则调整到边界
+        if (mPanX < leftBound) mPanX = leftBound
+        if (mPanX > rightBound) mPanX = rightBound
+        if (mPanY < topBound) mPanY = topBound
+        if (mPanY > bottomBound) mPanY = bottomBound
     }
 }

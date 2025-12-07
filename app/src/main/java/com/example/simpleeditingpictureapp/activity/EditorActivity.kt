@@ -51,6 +51,15 @@ class EditorActivity : AppCompatActivity() {
     private lateinit var seekbarContrast: SeekBar
     private lateinit var seekbarSaturation: SeekBar
 
+    // 裁剪比例选择器
+    private lateinit var cropAspectRatioSelector: View
+    private lateinit var btnAspectFree: TextView
+    private lateinit var btnAspect1To1: TextView
+    private lateinit var btnAspect3To4: TextView
+    private lateinit var btnAspect4To3: TextView
+    private lateinit var btnAspect9To16: TextView
+    private lateinit var btnAspect16To9: TextView
+
     // 缩放相关
     private var scaleEditorGestureDetector: ScaleGestureDetector? = null
 
@@ -122,10 +131,12 @@ class EditorActivity : AppCompatActivity() {
                     cropFrameViewGLSurfaceView.onTouchEvent(event)
                 } else {
                     // 非裁剪模式下，同时处理平移和缩放手势
-                    // 缩放手势检测器总是接收事件
+                    // 首先处理缩放手势
                     scaleEditorGestureDetector?.onTouchEvent(event)
 
-                    // 平移手势检测器只在单指触摸时处理事件
+                    // 然后处理平移手势（单指触摸时）
+                    // 注意：这里不检查是否处理了缩放手势，因为两者可以同时处理
+                    // 缩放手势检测器会处理多指事件，平移检测器会处理单指事件
                     if (event.pointerCount <= 1) {
                         editorGestureDetector.onTouchEvent(event)
                     }
@@ -168,6 +179,15 @@ class EditorActivity : AppCompatActivity() {
         switchGrayscale = findViewById(R.id.switch_grayscale)
         seekbarContrast = findViewById(R.id.seekbar_contrast)
         seekbarSaturation = findViewById(R.id.seekbar_saturation)
+
+        // 绑定裁剪比例选择器
+        cropAspectRatioSelector = findViewById(R.id.crop_aspect_ratio_selector)
+        btnAspectFree = cropAspectRatioSelector.findViewById(R.id.btn_aspect_free)
+        btnAspect1To1 = cropAspectRatioSelector.findViewById(R.id.btn_aspect_1_1)
+        btnAspect3To4 = cropAspectRatioSelector.findViewById(R.id.btn_aspect_3_4)
+        btnAspect4To3 = cropAspectRatioSelector.findViewById(R.id.btn_aspect_4_3)
+        btnAspect9To16 = cropAspectRatioSelector.findViewById(R.id.btn_aspect_9_16)
+        btnAspect16To9 = cropAspectRatioSelector.findViewById(R.id.btn_aspect_16_9)
     }
 
     private fun setupListeners() {
@@ -198,6 +218,37 @@ class EditorActivity : AppCompatActivity() {
 
         btnFilter.setOnClickListener {
             viewModel.enterFilterMode()
+        }
+
+        // 裁剪比例选择器监听
+        btnAspectFree.setOnClickListener {
+            cropFrameViewGLSurfaceView.setAspectRatio(CropFrameGLSurfaceView.AspectRatio.FREE)
+            updateAspectRatioButtons(CropFrameGLSurfaceView.AspectRatio.FREE)
+        }
+
+        btnAspect1To1.setOnClickListener {
+            cropFrameViewGLSurfaceView.setAspectRatio(CropFrameGLSurfaceView.AspectRatio.SQUARE)
+            updateAspectRatioButtons(CropFrameGLSurfaceView.AspectRatio.SQUARE)
+        }
+
+        btnAspect3To4.setOnClickListener {
+            cropFrameViewGLSurfaceView.setAspectRatio(CropFrameGLSurfaceView.AspectRatio.RATIO_3_4)
+            updateAspectRatioButtons(CropFrameGLSurfaceView.AspectRatio.RATIO_3_4)
+        }
+
+        btnAspect4To3.setOnClickListener {
+            cropFrameViewGLSurfaceView.setAspectRatio(CropFrameGLSurfaceView.AspectRatio.RATIO_4_3)
+            updateAspectRatioButtons(CropFrameGLSurfaceView.AspectRatio.RATIO_4_3)
+        }
+
+        btnAspect9To16.setOnClickListener {
+            cropFrameViewGLSurfaceView.setAspectRatio(CropFrameGLSurfaceView.AspectRatio.RATIO_9_16)
+            updateAspectRatioButtons(CropFrameGLSurfaceView.AspectRatio.RATIO_9_16)
+        }
+
+        btnAspect16To9.setOnClickListener {
+            cropFrameViewGLSurfaceView.setAspectRatio(CropFrameGLSurfaceView.AspectRatio.RATIO_16_9)
+            updateAspectRatioButtons(CropFrameGLSurfaceView.AspectRatio.RATIO_16_9)
         }
 
         btnCancel.setOnClickListener {
@@ -340,9 +391,15 @@ class EditorActivity : AppCompatActivity() {
             if (isCropping) {
                 cropFrameViewGLSurfaceView.visibility = View.VISIBLE
                 filterControlsBar.visibility = View.GONE
+                cropAspectRatioSelector.visibility = View.VISIBLE
+
+                // 初始化比例选择器按钮状态
+                val currentRatio = cropFrameViewGLSurfaceView.getCurrentAspectRatio()
+                updateAspectRatioButtons(currentRatio)
             } else if (isFiltering) {
                 cropFrameViewGLSurfaceView.visibility = View.GONE
                 filterControlsBar.visibility = View.VISIBLE
+                cropAspectRatioSelector.visibility = View.GONE
             }
         } else {
             editorTopBar.visibility = View.VISIBLE
@@ -350,6 +407,7 @@ class EditorActivity : AppCompatActivity() {
             editorBottomTools.visibility = View.VISIBLE
             cropFrameViewGLSurfaceView.visibility = View.GONE
             filterControlsBar.visibility = View.GONE
+            cropAspectRatioSelector.visibility = View.GONE
         }
     }
 
@@ -373,5 +431,28 @@ class EditorActivity : AppCompatActivity() {
 
     fun getGLSurfaceView(): GLSurfaceView {
         return glSurfaceView
+    }
+
+    /**
+     * 更新比例选择器按钮的选中状态
+     */
+    private fun updateAspectRatioButtons(selectedRatio: CropFrameGLSurfaceView.AspectRatio) {
+        // 重置所有按钮的选中状态
+        btnAspectFree.isSelected = false
+        btnAspect1To1.isSelected = false
+        btnAspect3To4.isSelected = false
+        btnAspect4To3.isSelected = false
+        btnAspect9To16.isSelected = false
+        btnAspect16To9.isSelected = false
+
+        // 设置当前选中的按钮
+        when (selectedRatio) {
+            CropFrameGLSurfaceView.AspectRatio.FREE -> btnAspectFree.isSelected = true
+            CropFrameGLSurfaceView.AspectRatio.SQUARE -> btnAspect1To1.isSelected = true
+            CropFrameGLSurfaceView.AspectRatio.RATIO_3_4 -> btnAspect3To4.isSelected = true
+            CropFrameGLSurfaceView.AspectRatio.RATIO_4_3 -> btnAspect4To3.isSelected = true
+            CropFrameGLSurfaceView.AspectRatio.RATIO_9_16 -> btnAspect9To16.isSelected = true
+            CropFrameGLSurfaceView.AspectRatio.RATIO_16_9 -> btnAspect16To9.isSelected = true
+        }
     }
 }

@@ -117,8 +117,9 @@
         app:layout_constraintDimensionRatio="H,1:1"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent">
+        app:layout_constraintTop_toBottomOf="@id/editor_top_bar"
+        app:layout_constraintBottom_toTopOf="@id/editor_bottom_tools">
+
 
         <android.opengl.GLSurfaceView
             android:id="@+id/gl_canvas"
@@ -217,5 +218,14 @@
             android:max="200"
             android:progress="100"/>
     </LinearLayout>
+
+    <!-- 裁剪比例选择面板 -->
+    <include
+        android:id="@+id/crop_aspect_ratio_selector"
+        layout="@layout/crop_aspect_ratio_selector"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
