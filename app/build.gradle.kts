@@ -60,6 +60,8 @@ dependencies {
     // 其他有用的库
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.7.0")
+//    implementation("androidx.lifecycle:lifecycle-transformations-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
 
     // 移除可能导致问题的依赖

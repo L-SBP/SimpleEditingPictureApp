@@ -29,6 +29,34 @@
             app:layout_constraintBottom_toBottomOf="parent"/>
 
         <ImageView
+            android:id="@+id/btn_undo"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginStart="16dp"
+            android:src="@android:drawable/ic_menu_revert"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true"
+            app:tint="@color/black"
+            app:layout_constraintStart_toEndOf="@id/btn_editor_back"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"/>
+
+        <ImageView
+            android:id="@+id/btn_redo"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginStart="16dp"
+            android:src="@android:drawable/ic_menu_rotate"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true"
+            app:tint="@color/black"
+            app:layout_constraintStart_toEndOf="@id/btn_undo"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"/>
+
+        <ImageView
             android:id="@+id/btn_save"
             android:layout_width="32dp"
             android:layout_height="32dp"

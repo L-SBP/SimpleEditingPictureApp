@@ -32,10 +32,11 @@ import com.example.simpleeditingpictureapp.viewmodel.EditorViewModel
 class EditorActivity : AppCompatActivity() {
     private lateinit var btnBack: ImageView
     private lateinit var btnSave: ImageView
+    private lateinit var btnUndo: ImageView
+    private lateinit var btnRedo: ImageView
     private lateinit var btnCrop: TextView
     private lateinit var btnFilter: TextView
     private val tag = "EditorActivity"
-    private var imageUri: Uri? = null
     private lateinit var glSurfaceView: GLSurfaceView
     private lateinit var renderer: EditorRenderer
     private lateinit var cropFrameViewGLSurfaceView: CropFrameGLSurfaceView
@@ -71,11 +72,16 @@ class EditorActivity : AppCompatActivity() {
             bindViews()
             Log.d(tag, "bindViews completed")
 
-            imageUri = intent.getStringExtra("imageUri")?.toUri()
+            val imageUri = intent.getStringExtra("imageUri")?.toUri()
             Log.d(tag, "imageUri: $imageUri")
 
-            // 设置ViewModel
-            viewModel.setImageUri(imageUri)
+            // 检查URI是否为空，如果为空则退出编辑器
+            if (imageUri == null) {
+                Log.e(tag, "图片URI为空，退出编辑器")
+                Toast.makeText(this, "无法加载图片", Toast.LENGTH_SHORT).show()
+                finish()
+                return@onCreate
+            }
 
             // 绑定 OpenGL 画布
             Log.d(tag, "Setting up GLSurfaceView")
@@ -83,14 +89,27 @@ class EditorActivity : AppCompatActivity() {
 
             // 创建 OpenGL 渲染器
             Log.d(tag, "Creating EditorRenderer")
-            renderer = EditorRenderer(this, imageUri)
+            renderer = EditorRenderer(this)
             glSurfaceView.setRenderer(renderer)
+
+            // 注册观察者
+            viewModel.bitmap.observe(this) { bitmap ->
+                bitmap?.let {
+                    Log.d(tag, "Bitmap loaded, setting to renderer")
+                    glSurfaceView.queueEvent {
+                        renderer.setBitmap(it)
+                    }
+                }
+            }
+
             // 使用连续渲染模式确保图片加载后能立即显示
             glSurfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
             glSurfaceView.requestRender()
 
             // 设置渲染器到ViewModel
             viewModel.setRenderer(renderer)
+            // 设置ViewModel到渲染器，用于在OpenGL上下文重建时重新加载纹理
+            renderer.setViewModel(viewModel)
             Log.d(tag, "EditorRenderer setup completed")
 
             // 创建缩放手势检测器
@@ -121,6 +140,10 @@ class EditorActivity : AppCompatActivity() {
             Log.d(tag, "Setting up listeners")
             setupListeners()
             observeViewModel()
+
+            // 设置URI，触发图片加载
+            viewModel.setImageUri(imageUri)
+
             Log.d(tag, "EditorActivity onCreate completed successfully")
         } catch (e: Exception) {
             Log.e(tag, "Error in EditorActivity onCreate", e)
@@ -131,6 +154,8 @@ class EditorActivity : AppCompatActivity() {
     private fun bindViews() {
         btnBack = findViewById(R.id.btn_editor_back)
         btnSave = findViewById(R.id.btn_save)
+        btnUndo = findViewById(R.id.btn_undo)
+        btnRedo = findViewById(R.id.btn_redo)
         btnCrop = findViewById(R.id.tool_crop)
         btnFilter = findViewById(R.id.tool_filter)
         cropFrameViewGLSurfaceView = findViewById(R.id.crop_frame_gl_surface)
@@ -158,6 +183,16 @@ class EditorActivity : AppCompatActivity() {
         btnSave.setOnClickListener {
             // 保存图片
             viewModel.saveEditedImage(glSurfaceView)
+        }
+
+        btnUndo.setOnClickListener {
+            // 撤销操作
+            viewModel.undo()
+        }
+
+        btnRedo.setOnClickListener {
+            // 重做操作
+            viewModel.redo()
         }
 
         btnCrop.setOnClickListener {
@@ -237,6 +272,17 @@ class EditorActivity : AppCompatActivity() {
             updateUiForEditing(uiState.isEditing, uiState.isCropping, uiState.isFiltering, uiState.showFilterControls)
         }
 
+        // 只在uri首次设置时加载图片
+        var lastObservedUri: Uri? = null
+        viewModel.uri.observe(this) { imageUri ->
+            Log.d(tag, "URI observed: $imageUri, bitmap is null: ${viewModel.bitmap.value == null}")
+            // 防止重复加载同一张图片
+            if (imageUri != null && viewModel.bitmap.value == null && imageUri != lastObservedUri) {
+                Log.d(tag, "Loading bitmap from URI")
+                lastObservedUri = imageUri
+                viewModel.loadBitmapToMemory(imageUri)
+            }
+        }
         // 观察滤镜值
         viewModel.filterValues.observe(this) { filterValues ->
             switchGrayscale.isChecked = filterValues.grayscale
@@ -250,6 +296,17 @@ class EditorActivity : AppCompatActivity() {
         // 观察裁剪框
         viewModel.cropRect.observe(this) { cropRect ->
             // 裁剪框更新会自动在CropFrameGLSurfaceView中处理
+        }
+
+        // 观察撤销/重做状态
+        viewModel.canUndo.observe(this) { canUndo ->
+            btnUndo.alpha = if (canUndo) 1.0f else 0.5f
+            btnUndo.isEnabled = canUndo
+        }
+
+        viewModel.canRedo.observe(this) { canRedo ->
+            btnRedo.alpha = if (canRedo) 1.0f else 0.5f
+            btnRedo.isEnabled = canRedo
         }
 
         // 观察消息

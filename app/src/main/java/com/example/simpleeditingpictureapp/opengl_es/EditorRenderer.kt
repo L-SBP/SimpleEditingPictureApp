@@ -1,10 +1,8 @@
 package com.example.simpleeditingpictureapp.opengl_es
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.RectF
-import android.net.Uri
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
@@ -21,15 +19,22 @@ import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
-import com.bumptech.glide.request.transition.Transition
+import com.example.simpleeditingpictureapp.viewmodel.EditorViewModel
 import kotlin.math.max
 import kotlin.math.min
 
 class EditorRenderer (
     private val context: Context,
-    private val imageUri: Uri?
 ) : GLSurfaceView.Renderer {
     private val tag = "EditorRenderer"
+
+    // 裁剪矩阵变化监听器
+    interface CropMatrixChangeListener {
+        fun onCropMatrixChanged(matrix: FloatArray)
+    }
+
+    private var cropMatrixChangeListener: CropMatrixChangeListener? = null
+    private var viewModel: EditorViewModel? = null
 
     // --- GL Program & Data ---
     private var program: Int = -1
@@ -106,8 +111,15 @@ class EditorRenderer (
         // 初始化Vbo
         initVertexBuffer()
 
-        // 异步加载图片
-        loadImageAsync()
+        // 如果已有bitmap，重新加载纹理
+        if (imageWidth > 0 && imageHeight > 0) {
+            // 从ViewModel获取ImageEditorModel中的bitmap
+            val bitmap = viewModel?.model?.imageBitmap
+            if (bitmap != null) {
+                textureId = TextureHelp.loadTexture(context, bitmap)
+                Log.d(tag, "重新加载纹理，textureId: $textureId")
+            }
+        }
 
         // 触发渲染
         (context as EditorActivity).getGLSurfaceView().requestRender()
@@ -132,24 +144,18 @@ class EditorRenderer (
 
         // 1. MVP Matrix for scaling and positioning
         Matrix.setIdentityM(mModelMatrix, 0)
-        // 应用平移
-        Matrix.translateM(mModelMatrix, 0, mPanX, mPanY, 0.0f)
         // 应用缩放（以焦点为中心）
         Matrix.translateM(mModelMatrix, 0, mFocusXInGl, mFocusYInGl, 0.0f)
         Matrix.scaleM(mModelMatrix, 0, mScale, mScale, 1.0f)
         Matrix.translateM(mModelMatrix, 0, -mFocusXInGl, -mFocusYInGl, 0.0f)
+        // 应用平移
+        Matrix.translateM(mModelMatrix, 0, mPanX, mPanY, 0.0f)
         Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, mModelMatrix, 0)
         GLES20.glUniformMatrix4fv(uMatrixLoc, 1, false, mvpMatrix, 0)
 
         // 2. Texture Matrix for cropping
-        if (isCropping) {
-            GLES20.glUniformMatrix4fv(uTexMatrixLoc, 1, false, cropTexMatrix, 0)
-            Log.d(tag, "应用裁剪矩阵: ${cropTexMatrix.contentToString()}")
-        } else {
-            Matrix.setIdentityM(texMatrix, 0)
-            GLES20.glUniformMatrix4fv(uTexMatrixLoc, 1, false, texMatrix, 0)
-            // Log.d(tag, "使用单位矩阵（无裁剪）")
-        }
+        GLES20.glUniformMatrix4fv(uTexMatrixLoc, 1, false, cropTexMatrix, 0)
+        Log.d(tag, "应用裁剪矩阵: ${cropTexMatrix.contentToString()}")
 
         // 3. Uniforms for shader logic (cropping and filtering)
         GLES20.glUniform1i(uIsCroppingLoc, if (isCropping) 1 else 0)
@@ -250,6 +256,27 @@ class EditorRenderer (
         Matrix.scaleM(cropTexMatrix, 0, cropRect.width(), cropRect.height(), 1.0f)
 
         Log.d(tag, "setCropRect: $normalizedCropRect")
+
+        // 通知监听器裁剪矩阵已更改
+        cropMatrixChangeListener?.onCropMatrixChanged(cropTexMatrix)
+    }
+
+    /**
+     * 设置裁剪矩阵变化监听器
+     */
+    fun setCropMatrixChangeListener(listener: CropMatrixChangeListener?) {
+        cropMatrixChangeListener = listener
+    }
+
+    /**
+     * 设置ViewModel引用，用于在OpenGL上下文重建时重新加载纹理
+     */
+    fun setViewModel(viewModel: EditorViewModel) {
+        this.viewModel = viewModel
+    }
+
+    fun setCropTexMatrix(matrix: FloatArray) {
+        System.arraycopy(matrix, 0, cropTexMatrix, 0, matrix.size)
     }
 
     private fun createProgram() {
@@ -350,76 +377,17 @@ class EditorRenderer (
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
     }
 
-    private fun loadImageAsync() {
-        Log.d(tag, "开始加载图片: $imageUri")
-
-        // 在加载新图片前，先释放旧资源
+    fun setBitmap(bitmap: Bitmap) {
         if (textureId != -1) {
             TextureHelp.deleteTexture(textureId)
-            textureId = -1
         }
 
-        val futureTarget = Glide.with(context)
-            .asBitmap()
-            .load(imageUri)
-            .listener(object : RequestListener<Bitmap> {
-                override fun onLoadFailed(
-                    e: GlideException?,
-                    model: Any?,
-                    target: Target<Bitmap?>,
-                    isFirstResource: Boolean
-                ): Boolean {
-                    Log.e(tag, "加载图片失败: $e")
-                    return false
-                }
+        imageWidth = bitmap.width
+        imageHeight = bitmap.height
+        textureId = TextureHelp.loadTexture(context, bitmap)
+        Log.d(tag, "textureId: $textureId")
 
-                override fun onResourceReady(
-                    resource: Bitmap,
-                    model: Any,
-                    target: Target<Bitmap?>?,
-                    dataSource: DataSource,
-                    isFirstResource: Boolean
-                ): Boolean {
-                    val bitmapCopy = resource.copy(resource.config ?: Bitmap.Config.ARGB_8888, false)
-                    (context as EditorActivity).getGLSurfaceView().queueEvent {
-                        // 保存图片尺寸
-                        imageWidth = bitmapCopy.width
-                        imageHeight = bitmapCopy.height
-
-                        textureId = TextureHelp.loadTexture(context, bitmapCopy)
-
-                        context.getGLSurfaceView().requestRender()
-                        bitmapCopy.recycle()
-                    }
-                    return true
-                }
-            })
-            .submit()
-
-//        // 在后台线程获取 Bitmap
-//        Thread {
-//            try {
-//                val resource = futureTarget.get()
-//                // 先复制Bitmap数据，避免在GL线程中访问已回收的资源
-//                val bitmapCopy = resource.copy(resource.config ?: Bitmap.Config.ARGB_8888, false)
-//
-//                (context as EditorActivity).getGLSurfaceView().queueEvent {
-//                    // 保存图片尺寸
-//                    imageWidth = bitmapCopy.width
-//                    imageHeight = bitmapCopy.height
-//
-//                    textureId = TextureHelp.loadTexture(context, bitmapCopy)
-//
-//                    context.getGLSurfaceView().requestRender()
-//
-//                    bitmapCopy.recycle()
-//                }
-//            } catch (e: Exception) {
-//                Log.e(tag, "加载图片失败: $e")
-//            } finally {
-//                Glide.with(context).clear(futureTarget)
-//            }
-//        }.start()
+        (context as EditorActivity).getGLSurfaceView().requestRender()
     }
 
     fun release() {

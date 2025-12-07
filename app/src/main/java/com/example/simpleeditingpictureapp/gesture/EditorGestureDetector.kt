@@ -12,7 +12,7 @@ class EditorGestureDetector(
     private val glSurfaceView: GLSurfaceView
 ): ScaleGestureDetector.SimpleOnScaleGestureListener (){
     private var scaleFactor = 1.0f
-    private var minScaleFactor = 0.2f
+    private var minScaleFactor = 1.0f
     private var maxScaleFactor = 5.0f
     private var mFocusX = 0.0f
     private var mFocusY = 0.0f
