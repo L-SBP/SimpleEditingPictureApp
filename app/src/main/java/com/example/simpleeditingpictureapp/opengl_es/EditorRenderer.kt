@@ -1,10 +1,8 @@
 package com.example.simpleeditingpictureapp.opengl_es
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.RectF
-import android.net.Uri
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
@@ -21,19 +19,41 @@ import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
-import com.bumptech.glide.request.transition.Transition
+import com.example.simpleeditingpictureapp.viewmodel.EditorViewModel
 import kotlin.math.max
 import kotlin.math.min
 
 class EditorRenderer (
     private val context: Context,
-    private val imageUri: Uri?
 ) : GLSurfaceView.Renderer {
     private val tag = "EditorRenderer"
+
+    // 裁剪矩阵变化监听器
+    interface CropMatrixChangeListener {
+        fun onCropMatrixChanged(matrix: FloatArray)
+    }
+
+    private var cropMatrixChangeListener: CropMatrixChangeListener? = null
+    private var viewModel: EditorViewModel? = null
+
+    // 图片宽高比和显示模式
+    private var imageAspectRatio = 1.0f
+    private var displayMode = DisplayMode.FIT_CENTER // 默认居中适配
+
+    // 显示区域计算
+    private var displayRect = RectF(0f, 0f, 1f, 1f)
+
+    // 显示模式枚举
+    enum class DisplayMode {
+        FIT_CENTER,     // 保持比例，居中显示（可能有黑边）
+        CROP_FILL,      // 裁剪模式：填满整个视图
+        ORIGINAL        // 原始比例，不缩放
+    }
 
     // --- GL Program & Data ---
     private var program: Int = -1
     private var textureId = -1
+    private var vertexVboId = -1
     private val vertexData = floatArrayOf(
         0.0f, 0.0f, // 屏幕左上角
         0.0f, 1.0f, // 屏幕左下角
@@ -106,8 +126,15 @@ class EditorRenderer (
         // 初始化Vbo
         initVertexBuffer()
 
-        // 异步加载图片
-        loadImageAsync()
+        // 如果已有bitmap，重新加载纹理
+        if (imageWidth > 0 && imageHeight > 0) {
+            // 从ViewModel获取ImageEditorModel中的bitmap
+            val bitmap = viewModel?.bitmap?.value
+            if (bitmap != null) {
+                textureId = TextureHelp.loadTexture(context, bitmap)
+                Log.d(tag, "重新加载纹理，textureId: $textureId")
+            }
+        }
 
         // 触发渲染
         (context as EditorActivity).getGLSurfaceView().requestRender()
@@ -132,24 +159,21 @@ class EditorRenderer (
 
         // 1. MVP Matrix for scaling and positioning
         Matrix.setIdentityM(mModelMatrix, 0)
-        // 应用平移
-        Matrix.translateM(mModelMatrix, 0, mPanX, mPanY, 0.0f)
         // 应用缩放（以焦点为中心）
         Matrix.translateM(mModelMatrix, 0, mFocusXInGl, mFocusYInGl, 0.0f)
         Matrix.scaleM(mModelMatrix, 0, mScale, mScale, 1.0f)
         Matrix.translateM(mModelMatrix, 0, -mFocusXInGl, -mFocusYInGl, 0.0f)
+        // 应用平移
+        Matrix.translateM(mModelMatrix, 0, mPanX, mPanY, 0.0f)
+
+        checkAndAdjustPan()
+
         Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, mModelMatrix, 0)
         GLES20.glUniformMatrix4fv(uMatrixLoc, 1, false, mvpMatrix, 0)
 
         // 2. Texture Matrix for cropping
-        if (isCropping) {
-            GLES20.glUniformMatrix4fv(uTexMatrixLoc, 1, false, cropTexMatrix, 0)
-            Log.d(tag, "应用裁剪矩阵: ${cropTexMatrix.contentToString()}")
-        } else {
-            Matrix.setIdentityM(texMatrix, 0)
-            GLES20.glUniformMatrix4fv(uTexMatrixLoc, 1, false, texMatrix, 0)
-            // Log.d(tag, "使用单位矩阵（无裁剪）")
-        }
+        GLES20.glUniformMatrix4fv(uTexMatrixLoc, 1, false, cropTexMatrix, 0)
+        Log.d(tag, "应用裁剪矩阵: ${cropTexMatrix.contentToString()}")
 
         // 3. Uniforms for shader logic (cropping and filtering)
         GLES20.glUniform1i(uIsCroppingLoc, if (isCropping) 1 else 0)
@@ -193,9 +217,24 @@ class EditorRenderer (
 
 
     fun applyScaling(scale: Float, focusX: Float, focusY: Float){
+        val previousScale = mScale
         mScale = scale
+
+        // 计算焦点在OpenGL坐标系中的位置
         mFocusXInGl = focusX / mViewWidth
-        mFocusYInGl = (mViewHeight - focusY) / mViewHeight
+        mFocusYInGl = 1.0f - focusY / mViewHeight  // OpenGL Y轴是反的
+
+        // 调整平移量以保持焦点位置
+        if (previousScale > 0f && scale > 0f) {
+            val scaleChange = scale / previousScale
+
+            // 简单的缩放逻辑：以焦点为中心缩放
+            mPanX = mFocusXInGl + (mPanX - mFocusXInGl) * scaleChange
+            mPanY = mFocusYInGl + (mPanY - mFocusYInGl) * scaleChange
+        }
+
+        // 限制平移范围
+        limitPan()
     }
 
     fun applyPan(dx: Float, dy: Float) {
@@ -208,9 +247,29 @@ class EditorRenderer (
         mPanY += dyGl / mScale
 
         // 限制平移范围
-        val maxPanX = 0.5f * (mScale - 1.0f)
-        val maxPanY = 0.5f * (mScale - 1.0f)
+        limitPan()
+    }
 
+    /**
+     * 限制平移范围，确保图片不会超出边界
+     */
+    private fun limitPan() {
+        // 如果缩放因子为1.0（原始大小），则不需要平移
+        if (mScale <= 1.0f) {
+            mPanX = 0f
+            mPanY = 0f
+            return
+        }
+
+        // 计算图片在屏幕上的实际显示大小
+        val imageDisplayWidth = imageAspectRatio * mScale
+        val imageDisplayHeight = 1.0f * mScale
+
+        // 计算最大平移范围
+        val maxPanX = max(0f, (imageDisplayWidth - 1.0f) / 2.0f)
+        val maxPanY = max(0f, (imageDisplayHeight - 1.0f) / 2.0f)
+
+        // 应用限制
         mPanX = max(-maxPanX, min(maxPanX, mPanX))
         mPanY = max(-maxPanY, min(maxPanY, mPanY))
     }
@@ -250,6 +309,121 @@ class EditorRenderer (
         Matrix.scaleM(cropTexMatrix, 0, cropRect.width(), cropRect.height(), 1.0f)
 
         Log.d(tag, "setCropRect: $normalizedCropRect")
+
+        // 通知监听器裁剪矩阵已更改
+        cropMatrixChangeListener?.onCropMatrixChanged(cropTexMatrix)
+    }
+
+    /**
+     * 设置裁剪矩阵变化监听器
+     */
+    fun setCropMatrixChangeListener(listener: CropMatrixChangeListener?) {
+        cropMatrixChangeListener = listener
+    }
+
+    /**
+     * 设置ViewModel引用，用于在OpenGL上下文重建时重新加载纹理
+     */
+    fun setViewModel(viewModel: EditorViewModel) {
+        this.viewModel = viewModel
+    }
+
+    fun setCropTexMatrix(matrix: FloatArray) {
+        System.arraycopy(matrix, 0, cropTexMatrix, 0, matrix.size)
+    }
+
+    /**
+     * 根据显示模式计算显示区域
+     */
+    private fun updateDisplayRect() {
+        val viewAspectRatio = 1.0f // 因为是正方形
+
+        when (displayMode) {
+            DisplayMode.FIT_CENTER -> {
+                // 保持比例，居中适配
+                if (imageAspectRatio > viewAspectRatio) {
+                    // 图片更宽，按宽度适配
+                    val scale = 1.0f / imageAspectRatio
+                    val offsetY = (1.0f - scale) / 2.0f
+                    displayRect.set(0f, offsetY, 1f, offsetY + scale)
+                } else {
+                    // 图片更高，按高度适配
+                    val scale = imageAspectRatio
+                    val offsetX = (1.0f - scale) / 2.0f
+                    displayRect.set(offsetX, 0f, offsetX + scale, 1.0f)
+                }
+            }
+            DisplayMode.CROP_FILL -> {
+                // 填满整个视图（可能变形）
+                displayRect.set(0f, 0f, 1f, 1f)
+            }
+            DisplayMode.ORIGINAL -> {
+                // 原始比例，不缩放（从左上角开始）
+                displayRect.set(0f, 0f, 
+                    min(1.0f, imageAspectRatio), 
+                    min(1.0f, 1.0f / imageAspectRatio))
+            }
+        }
+
+        // 更新顶点数据
+        updateVertexData()
+    }
+
+    /**
+     * 更新顶点数据
+     */
+    private fun updateVertexData() {
+        // 根据displayRect更新vertexData
+        vertexData[0] = displayRect.left
+        vertexData[1] = displayRect.top
+        vertexData[2] = displayRect.left
+        vertexData[3] = displayRect.bottom
+        vertexData[4] = displayRect.right
+        vertexData[5] = displayRect.top
+        vertexData[6] = displayRect.right
+        vertexData[7] = displayRect.bottom
+
+        // 更新VBO
+        updateVertexBuffer()
+    }
+
+    /**
+     * 更新VBO
+     */
+    private fun updateVertexBuffer() {
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vertexVboId)
+        GLES20.glBufferData(
+            GLES20.GL_ARRAY_BUFFER,
+            vertexData.size * Float.SIZE_BYTES,
+            FloatBuffer.wrap(vertexData),
+            GLES20.GL_STATIC_DRAW
+        )
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
+    }
+
+    /**
+     * 设置显示模式
+     */
+    fun setDisplayMode(mode: DisplayMode) {
+        displayMode = mode
+        updateDisplayRect()
+        (context as EditorActivity).getGLSurfaceView().requestRender()
+    }
+
+    /**
+     * 更新图片尺寸和宽高比
+     */
+    fun updateImageDimensions(width: Int, height: Int) {
+        imageWidth = width
+        imageHeight = height
+        imageAspectRatio = width.toFloat() / height.toFloat()
+        Log.d(tag, "更新图片尺寸: ${width}x${height}, 宽高比: $imageAspectRatio")
+
+        // 根据新的宽高比更新显示区域
+        updateDisplayRect()
+
+        // 请求渲染
+        (context as EditorActivity).getGLSurfaceView().requestRender()
     }
 
     private fun createProgram() {
@@ -304,8 +478,9 @@ class EditorRenderer (
         val vertexVbo = IntArray(1)
         // 申请Vbo Id
         GLES20.glGenBuffers(1, vertexVbo, 0)
+        vertexVboId = vertexVbo[0]
         // 绑定Vbo
-        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vertexVbo[0])
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vertexVboId)
         // 将vertexData 传递给VBO
         GLES20.glBufferData(
             GLES20.GL_ARRAY_BUFFER,
@@ -350,80 +525,33 @@ class EditorRenderer (
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
     }
 
-    private fun loadImageAsync() {
-        Log.d(tag, "开始加载图片: $imageUri")
-
-        // 在加载新图片前，先释放旧资源
+    fun setBitmap(bitmap: Bitmap) {
         if (textureId != -1) {
             TextureHelp.deleteTexture(textureId)
-            textureId = -1
         }
 
-        val futureTarget = Glide.with(context)
-            .asBitmap()
-            .load(imageUri)
-            .listener(object : RequestListener<Bitmap> {
-                override fun onLoadFailed(
-                    e: GlideException?,
-                    model: Any?,
-                    target: Target<Bitmap?>,
-                    isFirstResource: Boolean
-                ): Boolean {
-                    Log.e(tag, "加载图片失败: $e")
-                    return false
-                }
+        imageWidth = bitmap.width
+        imageHeight = bitmap.height
 
-                override fun onResourceReady(
-                    resource: Bitmap,
-                    model: Any,
-                    target: Target<Bitmap?>?,
-                    dataSource: DataSource,
-                    isFirstResource: Boolean
-                ): Boolean {
-                    val bitmapCopy = resource.copy(resource.config ?: Bitmap.Config.ARGB_8888, false)
-                    (context as EditorActivity).getGLSurfaceView().queueEvent {
-                        // 保存图片尺寸
-                        imageWidth = bitmapCopy.width
-                        imageHeight = bitmapCopy.height
+        // 计算图片宽高比
+        imageAspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
+        Log.d(tag, "图片宽高比: $imageAspectRatio")
 
-                        textureId = TextureHelp.loadTexture(context, bitmapCopy)
+        // 根据显示模式计算显示区域
+        updateDisplayRect()
 
-                        context.getGLSurfaceView().requestRender()
-                        bitmapCopy.recycle()
-                    }
-                    return true
-                }
-            })
-            .submit()
+        textureId = TextureHelp.loadTexture(context, bitmap)
+        Log.d(tag, "textureId: $textureId")
 
-//        // 在后台线程获取 Bitmap
-//        Thread {
-//            try {
-//                val resource = futureTarget.get()
-//                // 先复制Bitmap数据，避免在GL线程中访问已回收的资源
-//                val bitmapCopy = resource.copy(resource.config ?: Bitmap.Config.ARGB_8888, false)
-//
-//                (context as EditorActivity).getGLSurfaceView().queueEvent {
-//                    // 保存图片尺寸
-//                    imageWidth = bitmapCopy.width
-//                    imageHeight = bitmapCopy.height
-//
-//                    textureId = TextureHelp.loadTexture(context, bitmapCopy)
-//
-//                    context.getGLSurfaceView().requestRender()
-//
-//                    bitmapCopy.recycle()
-//                }
-//            } catch (e: Exception) {
-//                Log.e(tag, "加载图片失败: $e")
-//            } finally {
-//                Glide.with(context).clear(futureTarget)
-//            }
-//        }.start()
+        (context as EditorActivity).getGLSurfaceView().requestRender()
     }
 
     fun release() {
         TextureHelp.deleteTexture(textureId)
+        if (vertexVboId != -1) {
+            GLES20.glDeleteBuffers(1, intArrayOf(vertexVboId), 0)
+            vertexVboId = -1
+        }
         if (program != 0) {
             GLES20.glDeleteProgram(program)
         }
@@ -486,5 +614,31 @@ class EditorRenderer (
         // 翻转图像（OpenGL的Y轴与Android的Y轴相反）
         val flipMatrix = android.graphics.Matrix().apply { postScale(1f, -1f) }
         return Bitmap.createBitmap(bitmap, 0, 0, viewWidth, viewHeight, flipMatrix, true)
+    }
+
+
+    private fun checkAndAdjustPan() {
+        // 如果缩放因子为1.0（原始大小），则居中显示
+        if (mScale <= 1.0f) {
+            mPanX = 0f
+            mPanY = 0f
+            return
+        }
+
+        // 计算图片实际显示大小
+        val imageDisplayWidth = imageAspectRatio * mScale
+        val imageDisplayHeight = 1.0f * mScale
+
+        // 计算边界
+        val leftBound = -max(0f, (imageDisplayWidth - 1.0f) / 2.0f)
+        val rightBound = max(0f, (imageDisplayWidth - 1.0f) / 2.0f)
+        val topBound = -max(0f, (imageDisplayHeight - 1.0f) / 2.0f)
+        val bottomBound = max(0f, (imageDisplayHeight - 1.0f) / 2.0f)
+
+        // 如果当前平移超出边界，则调整到边界
+        if (mPanX < leftBound) mPanX = leftBound
+        if (mPanX > rightBound) mPanX = rightBound
+        if (mPanY < topBound) mPanY = topBound
+        if (mPanY > bottomBound) mPanY = bottomBound
     }
 }

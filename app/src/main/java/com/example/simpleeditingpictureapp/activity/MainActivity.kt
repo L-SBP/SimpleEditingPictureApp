@@ -7,7 +7,10 @@ import android.view.View
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Observer
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.PagerSnapHelper
 import androidx.recyclerview.widget.RecyclerView
@@ -15,23 +18,29 @@ import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.load.resource.gif.GifDrawable
-import com.bumptech.glide.request.target.SimpleTarget
-import com.bumptech.glide.request.transition.Transition
 import com.example.simpleeditingpictureapp.R
 import com.example.simpleeditingpictureapp.recyclerview.adapter.BannerAdapter
 import com.example.simpleeditingpictureapp.recyclerview.adapter.RecommendAdapter
 import com.example.simpleeditingpictureapp.recyclerview.bean.RecommendBean
+import com.example.simpleeditingpictureapp.viewmodel.MainViewModel
+import com.example.simpleeditingpictureapp.viewmodel.MainNavigationEvent
 import com.bumptech.glide.request.RequestListener
 
 class MainActivity : AppCompatActivity() {
     private val tag = "MainActivity"
+
+    // Banner相关
     private lateinit var rvBanner: RecyclerView
     private lateinit var bannerAdapter: BannerAdapter
     private lateinit var llIndicator: LinearLayout
+
+    // GIF相关
     private lateinit var mediaPreviewView: ImageView
+
+    // 推荐相关
     private lateinit var rvRecommend: RecyclerView
     private lateinit var recommendAdapter: RecommendAdapter
-    
+
     // 底部导航栏相关
     private lateinit var llHome: LinearLayout
     private lateinit var llEdit: LinearLayout
@@ -43,12 +52,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvEdit: TextView
     private lateinit var tvProfile: TextView
 
-    private val bannerData = listOf(
-        R.drawable.img1,
-        R.drawable.img2,
-        R.drawable.img3,
-        R.drawable.img4
-    )
+    // ViewModel
+    private val viewModel: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,9 +64,12 @@ class MainActivity : AppCompatActivity() {
         llIndicator = findViewById(R.id.ll_indicator)
         mediaPreviewView = findViewById(R.id.iv_media_preview)
         rvRecommend = findViewById(R.id.rv_recommend)
-        
+
         // 初始化底部导航栏
         initBottomNavigation()
+
+        // 观察ViewModel中的数据变化
+        observeViewModel()
 
         // 先初始化Banner，确保视图已经正确加载
         Log.d(tag, "init the banner")
@@ -75,7 +83,7 @@ class MainActivity : AppCompatActivity() {
             Log.d(tag, "init media preview")
             initMediaPreview()
         }, 100)
-        
+
         // 初始化推荐组件
         Log.d(tag, "init recommend")
         initRecommend()
@@ -89,7 +97,7 @@ class MainActivity : AppCompatActivity() {
         val snapHelper = PagerSnapHelper()
         snapHelper.attachToRecyclerView(rvBanner)
 
-        bannerAdapter = BannerAdapter(this, bannerData)
+        bannerAdapter = BannerAdapter(this, emptyList())
         rvBanner.adapter = bannerAdapter
 
         rvBanner.addOnScrollListener(object : RecyclerView.OnScrollListener() {
@@ -101,7 +109,7 @@ class MainActivity : AppCompatActivity() {
                     // findFirstCompletelyVisibleItemPosition返回的就是0~getItemCount()-1的数
                     val centerPosition = layoutManager.findFirstCompletelyVisibleItemPosition()
                     if (centerPosition != RecyclerView.NO_POSITION) {
-                        updateIndicator(centerPosition % bannerData.size)
+                        updateIndicator(centerPosition % (viewModel.bannerData.value?.size ?: 1))
                     }
                 }
             }
@@ -110,7 +118,7 @@ class MainActivity : AppCompatActivity() {
         val initPosition = Int.MAX_VALUE / 2
         rvBanner.post {
             rvBanner.scrollToPosition(initPosition)
-            updateIndicator(initPosition % bannerData.size)
+            updateIndicator(initPosition % (viewModel.bannerData.value?.size ?: 1))
         }
     }
 
@@ -123,21 +131,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun initIndicator() {
         llIndicator.removeAllViews()
-        val indicatorSize = dp2px(8f)
-        val margin = dp2px(4f)
+        val indicatorSize = viewModel.dp2px(8f)
+        val margin = viewModel.dp2px(4f)
 
-        for (i in bannerData.indices) {
+        val bannerCount = viewModel.bannerData.value?.size ?: 0
+        for (i in 0 until bannerCount) {
             val indicator = ImageView(this)
             indicator.layoutParams = LinearLayout.LayoutParams(indicatorSize, indicatorSize)
             (indicator.layoutParams as LinearLayout.LayoutParams).setMargins(margin, margin, margin, margin)
             indicator.setBackgroundResource(if (i == 0) R.drawable.shape_indicator_selected else R.drawable.shape_indicator_normal)
             llIndicator.addView(indicator)
         }
-    }
-
-    private fun dp2px(dp: Float): Int {
-        val density = resources.displayMetrics.density
-        return (dp * density + 0.5f).toInt()
     }
 
     private fun initMediaPreview() {
@@ -171,7 +175,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        setNavigationItemSelection(0)
+        viewModel.onNavigationItemClick(0)
     }
 
     override fun onPause() {
@@ -188,77 +192,94 @@ class MainActivity : AppCompatActivity() {
         tvHome = findViewById(R.id.tv_home)
         tvEdit = findViewById(R.id.tv_edit)
         tvProfile = findViewById(R.id.tv_profile)
-        
-        // 设置主页为选中状态
-        setNavigationItemSelection(0)
-        
+
         // 主页点击事件
         llHome.setOnClickListener {
-            setNavigationItemSelection(0)
+            viewModel.onNavigationItemClick(0)
         }
-        
+
         // 修图点击事件
         llEdit.setOnClickListener {
-            setNavigationItemSelection(1)
-            val intent = Intent(this@MainActivity, GalleryActivity::class.java)
-            startActivity(intent)
+            viewModel.onNavigationItemClick(1)
         }
-        
+
         // 我的点击事件
         llProfile.setOnClickListener {
-            setNavigationItemSelection(2)
-            val intent = Intent(this@MainActivity, ProfileActivity::class.java)
-            startActivity(intent)
+            viewModel.onNavigationItemClick(2)
         }
     }
-    
+
     private fun setNavigationItemSelection(position: Int) {
         // 重置所有导航项的颜色
-        ivHome.setColorFilter(resources.getColor(android.R.color.darker_gray))
-        ivEdit.setColorFilter(resources.getColor(android.R.color.darker_gray))
-        ivProfile.setColorFilter(resources.getColor(android.R.color.darker_gray))
-        tvHome.setTextColor(resources.getColor(android.R.color.darker_gray))
-        tvEdit.setTextColor(resources.getColor(android.R.color.darker_gray))
-        tvProfile.setTextColor(resources.getColor(android.R.color.darker_gray))
-        
+        ivHome.setColorFilter(ContextCompat.getColor(this, android.R.color.darker_gray))
+        ivEdit.setColorFilter(ContextCompat.getColor(this, android.R.color.darker_gray))
+        ivProfile.setColorFilter(ContextCompat.getColor(this, android.R.color.darker_gray))
+        tvHome.setTextColor(ContextCompat.getColor(this, android.R.color.darker_gray))
+        tvEdit.setTextColor(ContextCompat.getColor(this, android.R.color.darker_gray))
+        tvProfile.setTextColor(ContextCompat.getColor(this, android.R.color.darker_gray))
+
         // 设置选中项的颜色
         when (position) {
             0 -> {
-                ivHome.setColorFilter(resources.getColor(R.color.pink))
-                tvHome.setTextColor(resources.getColor(R.color.pink))
+                ivHome.setColorFilter(ContextCompat.getColor(this, R.color.pink))
+                tvHome.setTextColor(ContextCompat.getColor(this, R.color.pink))
             }
             1 -> {
-                ivEdit.setColorFilter(resources.getColor(R.color.pink))
-                tvEdit.setTextColor(resources.getColor(R.color.pink))
+                ivEdit.setColorFilter(ContextCompat.getColor(this, R.color.pink))
+                tvEdit.setTextColor(ContextCompat.getColor(this, R.color.pink))
             }
             2 -> {
-                ivProfile.setColorFilter(resources.getColor(R.color.pink))
-                tvProfile.setTextColor(resources.getColor(R.color.pink))
+                ivProfile.setColorFilter(ContextCompat.getColor(this, R.color.pink))
+                tvProfile.setTextColor(ContextCompat.getColor(this, R.color.pink))
             }
         }
     }
-    
+
     private fun initRecommend() {
         val layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         rvRecommend.layoutManager = layoutManager
         rvRecommend.setHasFixedSize(true)
-        
-        // 创建推荐数据
-        val recommendData = listOf(
-            RecommendBean(R.drawable.reconmend1, "AI 氛围感飘雪"),
-            RecommendBean(R.drawable.reconmend2, "发丝发光氛围感"),
-            RecommendBean(R.drawable.reconmend3, "无聊自拍秒出片"),
-            RecommendBean(R.drawable.reconmend4, "废片自拍一键救回"),
-            RecommendBean(R.drawable.reconmend5, "高级人像质感修图"),
-            RecommendBean(R.drawable.reconmend6, "冬日飘雪氛围大片"),
-            RecommendBean(R.drawable.reconmend7, "户外逆光发丝氛围"),
-            RecommendBean(R.drawable.reconmend8, "窗边慵懒日常感")
-        )
-        
-        recommendAdapter = RecommendAdapter(recommendData)
+
+        recommendAdapter = RecommendAdapter(emptyList())
         rvRecommend.adapter = recommendAdapter
     }
-    
+
+    /**
+     * 观察ViewModel中的数据变化
+     */
+    private fun observeViewModel() {
+        // 观察Banner数据，当然在我目前版本的app中不会更新banner，只有加载的时候会传递图片数据
+        viewModel.bannerData.observe(this, Observer { data ->
+            bannerAdapter.updateData(data)
+            // 重新初始化指示器
+            initIndicator()
+        })
+
+        // 观察推荐数据，其实也不会更新recommend，只有加载的时候会传递图片数据
+        viewModel.recommendData.observe(this, Observer { data ->
+            recommendAdapter.updateData(data)
+        })
+
+        // 观察选中的导航项
+        viewModel.selectedNavigationItem.observe(this, Observer { position ->
+            setNavigationItemSelection(position)
+        })
+
+        // 观察导航事件
+        viewModel.navigationEvent.observe(this, Observer { event ->
+            when (event) {
+                is MainNavigationEvent.ToGallery -> {
+                    val intent = Intent(this@MainActivity, GalleryActivity::class.java)
+                    startActivity(intent)
+                }
+                is MainNavigationEvent.ToProfile -> {
+                    val intent = Intent(this@MainActivity, ProfileActivity::class.java)
+                    startActivity(intent)
+                }
+            }
+        })
+    }
+
     override fun onDestroy() {
         super.onDestroy()
     }

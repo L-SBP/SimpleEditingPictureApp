@@ -13,7 +13,7 @@ import com.example.simpleeditingpictureapp.widget.CustomImageView
 
 class BannerAdapter(
     private val context: Context,
-    private val data: List<Int>
+    private var data: List<Int>
 ) : RecyclerView.Adapter<BannerAdapter.BannerViewHolder>() {
 
     private val tag = "BannerAdapter"
@@ -85,5 +85,14 @@ class BannerAdapter(
 
     override fun getItemCount(): Int {
         return if (data.isEmpty()) 0 else Int.MAX_VALUE
+    }
+
+    /**
+     * 更新数据
+     * @param newData 新数据列表
+     */
+    fun updateData(newData: List<Int>) {
+        data = newData
+        notifyDataSetChanged()
     }
 }

@@ -10,7 +10,7 @@ import com.example.simpleeditingpictureapp.R
 import com.example.simpleeditingpictureapp.recyclerview.bean.RecommendBean
 import com.example.simpleeditingpictureapp.recyclerview.viewholder.RecommendViewHolder
 
-class RecommendAdapter(private val recommendList: List<RecommendBean>) : RecyclerView.Adapter<RecommendViewHolder>() {
+class RecommendAdapter(private var recommendList: List<RecommendBean>) : RecyclerView.Adapter<RecommendViewHolder>() {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecommendViewHolder {
         val view = LayoutInflater.from(parent.context).inflate(R.layout.item_recommend, parent, false)
@@ -31,5 +31,14 @@ class RecommendAdapter(private val recommendList: List<RecommendBean>) : Recycle
 
     override fun getItemCount(): Int {
         return recommendList.size
+    }
+
+    /**
+     * 更新数据
+     * @param newData 新数据列表
+     */
+    fun updateData(newData: List<RecommendBean>) {
+        recommendList = newData
+        notifyDataSetChanged()
     }
 }

@@ -3,11 +3,14 @@ package com.example.simpleeditingpictureapp.activity
 
 import android.content.Intent
 import android.os.Bundle
-import android.text.TextUtils
 import android.widget.Button
 import android.widget.Toast
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Observer
 import com.example.simpleeditingpictureapp.R
+import com.example.simpleeditingpictureapp.viewmodel.LoginViewModel
+import com.example.simpleeditingpictureapp.viewmodel.LoginNavigationEvent
 import com.google.android.material.textfield.TextInputEditText
 
 class LoginActivity : AppCompatActivity() {
@@ -15,6 +18,9 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var etUsername: TextInputEditText
     private lateinit var etPassword: TextInputEditText
     private lateinit var btnLogin: Button
+
+    // ViewModel
+    private val viewModel: LoginViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,34 +30,34 @@ class LoginActivity : AppCompatActivity() {
         etPassword = findViewById(R.id.et_password)
         btnLogin = findViewById(R.id.btn_login)
 
+        // 观察ViewModel中的数据变化
+        observeViewModel()
+
         btnLogin.setOnClickListener {
-            login()
+            val username = etUsername.text.toString().trim()
+            val password = etPassword.text.toString().trim()
+            viewModel.login(username, password)
         }
     }
 
-    private fun login() {
-        val username = etUsername.text.toString().trim()
-        val password = etPassword.text.toString().trim()
+    /**
+     * 观察ViewModel中的数据变化
+     */
+    private fun observeViewModel() {
+        // 观察消息
+        viewModel.message.observe(this, Observer { message ->
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        })
 
-        if (TextUtils.isEmpty(username)) {
-            Toast.makeText(this, "请输入用户名", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        if (TextUtils.isEmpty(password)) {
-            Toast.makeText(this, "请输入密码", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // 验证用户名和密码
-        if (username == "admin" && password == "123456") {
-            Toast.makeText(this, "登录成功", Toast.LENGTH_SHORT).show()
-
-            val intent = Intent(this@LoginActivity, MainActivity::class.java)
-            startActivity(intent)
-            finish()
-        } else {
-            Toast.makeText(this, "用户名或密码错误", Toast.LENGTH_SHORT).show()
-        }
+        // 观察导航事件
+        viewModel.navigationEvent.observe(this, Observer { event ->
+            when (event) {
+                is LoginNavigationEvent.ToMain -> {
+                    val intent = Intent(this@LoginActivity, MainActivity::class.java)
+                    startActivity(intent)
+                    finish()
+                }
+            }
+        })
     }
 }

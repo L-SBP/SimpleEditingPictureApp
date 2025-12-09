@@ -20,7 +20,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -48,6 +49,7 @@ dependencies {
 
     // 修复 Glide 依赖配置
     implementation("com.github.bumptech.glide:glide:4.16.0")
+    implementation(libs.androidx.navigationevent)
 
     // 使用 kapt 进行注解处理
     kapt("com.github.bumptech.glide:compiler:4.16.0")
@@ -59,6 +61,8 @@ dependencies {
     // 其他有用的库
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.7.0")
+//    implementation("androidx.lifecycle:lifecycle-transformations-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
 
     // 移除可能导致问题的依赖

@@ -5,6 +5,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.example.simpleeditingpictureapp.R
 import com.example.simpleeditingpictureapp.recyclerview.bean.ImageBean
 import com.example.simpleeditingpictureapp.recyclerview.viewholder.ImageViewHolder
@@ -23,6 +24,9 @@ class ImageAdapter(private val imageList: MutableList<ImageBean>) : RecyclerView
             .load(imageBean.imageUri)
             .placeholder(android.R.drawable.ic_menu_gallery)
             .error(android.R.drawable.ic_menu_gallery)
+            .skipMemoryCache(false)  // 不跳过内存缓存
+            .diskCacheStrategy(DiskCacheStrategy.NONE)  // 不使用磁盘缓存，确保每次都重新加载
+            .dontAnimate()  // 禁用动画，避免闪烁
             .into(holder.imageView)
 
         // 根据选中状态显示或隐藏勾选图标
