@@ -1,6 +1,7 @@
 package com.example.simpleeditingpictureapp.activity
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.net.Uri
 import android.opengl.GLSurfaceView
 import android.os.Bundle
@@ -18,13 +19,17 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.net.toUri
+import androidx.lifecycle.observe
 import com.example.simpleeditingpictureapp.R
 import com.example.simpleeditingpictureapp.gesture.EditorGestureDetector
-import com.example.simpleeditingpictureapp.model.ImageEditorModel
 import com.example.simpleeditingpictureapp.opengl_es.CropFrameGLSurfaceView
 import com.example.simpleeditingpictureapp.opengl_es.EditorRenderer
 import com.example.simpleeditingpictureapp.viewmodel.EditorViewModel
 
+/**
+ * 编辑器Activity - 纯View层，负责UI展示和用户交互
+ * 所有业务逻辑通过ViewModel处理
+ */
 @SuppressLint("UseSwitchCompatOrMaterialCode")
 class EditorActivity : AppCompatActivity() {
     private lateinit var btnBack: ImageView
@@ -44,7 +49,7 @@ class EditorActivity : AppCompatActivity() {
     private lateinit var editorActionsBar: ConstraintLayout
     private lateinit var editorBottomTools: LinearLayout
     private lateinit var filterControlsBar: LinearLayout
-    private lateinit var canvasContainer: FrameLayout // 新增的画布容器
+    private lateinit var canvasContainer: FrameLayout
     private lateinit var btnCancel: TextView
     private lateinit var btnConfirm: TextView
     private lateinit var switchGrayscale: Switch
@@ -78,84 +83,124 @@ class EditorActivity : AppCompatActivity() {
             bindViews()
             Log.d(tag, "bindViews completed")
 
-            val imageUri = intent.getStringExtra("imageUri")?.toUri()
-            Log.d(tag, "imageUri: $imageUri")
+            // 初始化ViewModel
+            viewModel.initializeEditor(intent.getStringExtra("imageUri")?.toUri())
 
-            // 检查URI是否为空，如果为空则退出编辑器
-            if (imageUri == null) {
-                Log.e(tag, "图片URI为空，退出编辑器")
-                Toast.makeText(this, "无法加载图片", Toast.LENGTH_SHORT).show()
-                finish()
-                return@onCreate
-            }
-
-            // 绑定 OpenGL 画布
-            Log.d(tag, "Setting up GLSurfaceView")
-            glSurfaceView.setEGLContextClientVersion(2)
-
-            // 创建 OpenGL 渲染器
-            Log.d(tag, "Creating EditorRenderer")
-            renderer = EditorRenderer(this)
-            glSurfaceView.setRenderer(renderer)
-
-            // 注册观察者
-            viewModel.bitmap.observe(this) { bitmap ->
-                bitmap?.let {
-                    Log.d(tag, "Bitmap loaded, setting to renderer")
-                    glSurfaceView.queueEvent {
-                        renderer.setBitmap(it)
-                    }
-                }
-            }
-
-            // 使用连续渲染模式确保图片加载后能立即显示
-            glSurfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
-            glSurfaceView.requestRender()
-
-            // 设置渲染器到ViewModel
-            viewModel.setRenderer(renderer)
-            // 设置ViewModel到渲染器，用于在OpenGL上下文重建时重新加载纹理
-            renderer.setViewModel(viewModel)
-            Log.d(tag, "EditorRenderer setup completed")
-
-            // 创建缩放手势检测器
-            Log.d(tag, "Setting up gesture detectors")
-            editorGestureDetector = EditorGestureDetector(renderer, glSurfaceView)
-            scaleEditorGestureDetector = ScaleGestureDetector(this, editorGestureDetector)
-
-            // 将触摸监听器设置在父容器上
-            canvasContainer.setOnTouchListener { _, event ->
-                val uiState = viewModel.uiState.value
-                if (uiState?.isCropping == true) {
-                    // 裁剪模式下，事件只交给 CropFrameView 处理
-                    cropFrameViewGLSurfaceView.onTouchEvent(event)
-                } else {
-                    // 非裁剪模式下，同时处理平移和缩放手势
-                    // 首先处理缩放手势
-                    scaleEditorGestureDetector?.onTouchEvent(event)
-
-                    // 然后处理平移手势（单指触摸时）
-                    // 注意：这里不检查是否处理了缩放手势，因为两者可以同时处理
-                    // 缩放手势检测器会处理多指事件，平移检测器会处理单指事件
-                    if (event.pointerCount <= 1) {
-                        editorGestureDetector.onTouchEvent(event)
-                    }
-                }
-                true // 消费事件
-            }
-            Log.d(tag, "Touch listener setup completed")
-
-            Log.d(tag, "Setting up listeners")
-            setupListeners()
+            // 观察ViewModel状态变化
+            observeViewModelEvents()
             observeViewModel()
 
-            // 设置URI，触发图片加载
-            viewModel.setImageUri(imageUri)
+            // 设置UI
+            setupOpenGLRenderer()
+            setupGestureDetectors()
+            setupListeners()
 
             Log.d(tag, "EditorActivity onCreate completed successfully")
         } catch (e: Exception) {
             Log.e(tag, "Error in EditorActivity onCreate", e)
             throw e
+        }
+    }
+
+    /**
+     * 设置OpenGL渲染器
+     */
+    private fun setupOpenGLRenderer() {
+        Log.d(tag, "Setting up GLSurfaceView")
+        glSurfaceView.setEGLContextClientVersion(2)
+
+        // 创建 OpenGL 渲染器
+        Log.d(tag, "Creating EditorRenderer")
+        renderer = EditorRenderer(this)
+        glSurfaceView.setRenderer(renderer)
+
+        // 使用连续渲染模式确保图片加载后能立即显示
+        glSurfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+        glSurfaceView.requestRender()
+
+        // 设置渲染器到ViewModel
+        viewModel.setRenderer(renderer)
+        // 设置ViewModel到渲染器，用于在OpenGL上下文重建时重新加载纹理
+        renderer.setViewModel(viewModel)
+        Log.d(tag, "EditorRenderer setup completed")
+    }
+
+    /**
+     * 设置手势检测器
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupGestureDetectors() {
+        // 创建缩放手势检测器
+        Log.d(tag, "Setting up gesture detectors")
+        editorGestureDetector = EditorGestureDetector(renderer, glSurfaceView)
+        scaleEditorGestureDetector = ScaleGestureDetector(this, editorGestureDetector)
+
+        // 将触摸监听器设置在父容器上
+        canvasContainer.setOnTouchListener { _, event ->
+            val uiState = viewModel.uiState.value
+            if (uiState?.isCropping == true) {
+                // 裁剪模式下，事件只交给 CropFrameView 处理
+                cropFrameViewGLSurfaceView.onTouchEvent(event)
+            } else {
+                // 非裁剪模式下，同时处理平移和缩放手势
+                // 首先处理缩放手势
+                scaleEditorGestureDetector?.onTouchEvent(event)
+
+                // 然后处理平移手势（单指触摸时）
+                if (event.pointerCount <= 1) {
+                    editorGestureDetector.onTouchEvent(event)
+                }
+            }
+            true // 消费事件
+        }
+        Log.d(tag, "Touch listener setup completed")
+    }
+
+    /**
+     * 观察ViewModel事件
+     */
+    private fun observeViewModelEvents() {
+        // 观察错误事件
+        viewModel.errorEvent.observe(this) { errorMessage ->
+            Toast.makeText(this, errorMessage, Toast.LENGTH_SHORT).show()
+            if (errorMessage.contains("无法加载图片")) {
+                finish()
+            }
+        }
+
+        // 观察Bitmap加载
+        viewModel.bitmap.observe(this) { bitmap ->
+            bitmap?.let {
+                Log.d(tag, "Bitmap loaded, setting to renderer")
+                glSurfaceView.queueEvent {
+                    renderer.setBitmap(it)
+                }
+            }
+        }
+
+        // 观察导航事件
+        viewModel.navigationEvent.observe(this) { navigateToMain ->
+            if (navigateToMain) {
+                // 导航到MainActivity
+                val intent = Intent(this, MainActivity::class.java)
+                intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+                startActivity(intent)
+                finish()
+            }
+        }
+        
+        // 观察保存结果
+        viewModel.saveResult.observe(this) { success ->
+            if (success) {
+                Toast.makeText(this, "图片保存成功", Toast.LENGTH_SHORT).show()
+            }
+        }
+        
+        // 观察消息
+        viewModel.message.observe(this) { message ->
+            message?.let {
+                Toast.makeText(this, it, Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -190,109 +235,59 @@ class EditorActivity : AppCompatActivity() {
         btnAspect16To9 = cropAspectRatioSelector.findViewById(R.id.btn_aspect_16_9)
     }
 
+    /**
+     * 设置UI控件监听器
+     */
     private fun setupListeners() {
-        btnBack.setOnClickListener {
-            // 直接返回MainActivity，不经过GalleryActivity
-            viewModel.navigateToMain()
-            finish()
+        // 顶部工具栏按钮
+        btnBack.setOnClickListener { viewModel.onBackClicked() }
+        btnSave.setOnClickListener { viewModel.onSaveClicked(glSurfaceView) }
+        btnUndo.setOnClickListener { viewModel.onUndoClicked() }
+        btnRedo.setOnClickListener { viewModel.onRedoClicked() }
+
+        // 底部工具按钮
+        btnCrop.setOnClickListener { viewModel.onCropClicked() }
+        btnFilter.setOnClickListener { viewModel.onFilterClicked() }
+
+        // 裁剪比例选择器按钮
+        btnAspectFree.setOnClickListener { viewModel.onAspectRatioChanged(CropFrameGLSurfaceView.AspectRatio.FREE) }
+        btnAspect1To1.setOnClickListener { viewModel.onAspectRatioChanged(CropFrameGLSurfaceView.AspectRatio.SQUARE) }
+        btnAspect3To4.setOnClickListener { viewModel.onAspectRatioChanged(CropFrameGLSurfaceView.AspectRatio.RATIO_3_4) }
+        btnAspect4To3.setOnClickListener { viewModel.onAspectRatioChanged(CropFrameGLSurfaceView.AspectRatio.RATIO_4_3) }
+        btnAspect9To16.setOnClickListener { viewModel.onAspectRatioChanged(CropFrameGLSurfaceView.AspectRatio.RATIO_9_16) }
+        btnAspect16To9.setOnClickListener { viewModel.onAspectRatioChanged(CropFrameGLSurfaceView.AspectRatio.RATIO_16_9) }
+
+        // 取消和确认按钮
+        btnCancel.setOnClickListener { viewModel.onCancelClicked() }
+        btnConfirm.setOnClickListener { viewModel.onConfirmClicked() }
+
+        // 裁剪框变化监听
+        cropFrameViewGLSurfaceView.setOnCropRectChangeListener { rect ->
+            viewModel.onCropRectChanged(rect)
         }
 
-        btnSave.setOnClickListener {
-            // 保存图片
-            viewModel.saveEditedImage(glSurfaceView)
-        }
+        // 滤镜控件监听
+        setupFilterListeners()
+    }
 
-        btnUndo.setOnClickListener {
-            // 撤销操作
-            viewModel.undo()
-        }
-
-        btnRedo.setOnClickListener {
-            // 重做操作
-            viewModel.redo()
-        }
-
-        btnCrop.setOnClickListener {
-            viewModel.enterCropMode()
-        }
-
-        btnFilter.setOnClickListener {
-            viewModel.enterFilterMode()
-        }
-
-        // 裁剪比例选择器监听
-        btnAspectFree.setOnClickListener {
-            cropFrameViewGLSurfaceView.setAspectRatio(CropFrameGLSurfaceView.AspectRatio.FREE)
-            updateAspectRatioButtons(CropFrameGLSurfaceView.AspectRatio.FREE)
-        }
-
-        btnAspect1To1.setOnClickListener {
-            cropFrameViewGLSurfaceView.setAspectRatio(CropFrameGLSurfaceView.AspectRatio.SQUARE)
-            updateAspectRatioButtons(CropFrameGLSurfaceView.AspectRatio.SQUARE)
-        }
-
-        btnAspect3To4.setOnClickListener {
-            cropFrameViewGLSurfaceView.setAspectRatio(CropFrameGLSurfaceView.AspectRatio.RATIO_3_4)
-            updateAspectRatioButtons(CropFrameGLSurfaceView.AspectRatio.RATIO_3_4)
-        }
-
-        btnAspect4To3.setOnClickListener {
-            cropFrameViewGLSurfaceView.setAspectRatio(CropFrameGLSurfaceView.AspectRatio.RATIO_4_3)
-            updateAspectRatioButtons(CropFrameGLSurfaceView.AspectRatio.RATIO_4_3)
-        }
-
-        btnAspect9To16.setOnClickListener {
-            cropFrameViewGLSurfaceView.setAspectRatio(CropFrameGLSurfaceView.AspectRatio.RATIO_9_16)
-            updateAspectRatioButtons(CropFrameGLSurfaceView.AspectRatio.RATIO_9_16)
-        }
-
-        btnAspect16To9.setOnClickListener {
-            cropFrameViewGLSurfaceView.setAspectRatio(CropFrameGLSurfaceView.AspectRatio.RATIO_16_9)
-            updateAspectRatioButtons(CropFrameGLSurfaceView.AspectRatio.RATIO_16_9)
-        }
-
-        btnCancel.setOnClickListener {
-            val uiState = viewModel.uiState.value
-            if (uiState?.isCropping == true) {
-                viewModel.exitCropMode(false)
-            } else if (uiState?.isFiltering == true) {
-                viewModel.exitFilterMode(false)
-            }
-        }
-
-        btnConfirm.setOnClickListener {
-            val uiState = viewModel.uiState.value
-            if (uiState?.isCropping == true) {
-                viewModel.exitCropMode(true)
-            } else if (uiState?.isFiltering == true) {
-                viewModel.exitFilterMode(true)
-            }
-        }
-
-        cropFrameViewGLSurfaceView.setOnCropRectChangeListener { normalizedRect ->
-            viewModel.updateCropFrameRect(normalizedRect)
-        }
-
-        // Filter Listeners
+    /**
+     * 设置滤镜控件监听器
+     */
+    private fun setupFilterListeners() {
+        // 灰度开关
         switchGrayscale.setOnCheckedChangeListener { _, isChecked ->
-            val currentValues = viewModel.filterValues.value ?: ImageEditorModel.FilterValues(false, 1.0f, 1.0f)
-            viewModel.updateFilterValues(currentValues.copy(grayscale = isChecked))
+            viewModel.onGrayscaleChanged(isChecked)
         }
 
+        // 对比度和饱和度滑块
         val seekBarListener = object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
 
                 val value = progress / 100.0f
-                val currentValues = viewModel.filterValues.value ?: ImageEditorModel.FilterValues(false, 1.0f, 1.0f)
-
                 when (seekBar?.id) {
-                    R.id.seekbar_contrast -> {
-                        viewModel.updateFilterValues(currentValues.copy(contrast = value))
-                    }
-                    R.id.seekbar_saturation -> {
-                        viewModel.updateFilterValues(currentValues.copy(saturation = value))
-                    }
+                    R.id.seekbar_contrast -> viewModel.onContrastChanged(value)
+                    R.id.seekbar_saturation -> viewModel.onSaturationChanged(value)
                 }
             }
 
@@ -305,14 +300,7 @@ class EditorActivity : AppCompatActivity() {
     }
 
     /**
-     * 更新滤镜值
-     */
-    private fun updateFilterValues(values: ImageEditorModel.FilterValues) {
-        viewModel.updateFilter(values)
-    }
-
-    /**
-     * 观察ViewModel中的数据变化
+     * 观察ViewModel中的数据变化并更新UI
      */
     private fun observeViewModel() {
         // 观察UI状态
@@ -320,17 +308,6 @@ class EditorActivity : AppCompatActivity() {
             updateUiForEditing(uiState.isEditing, uiState.isCropping, uiState.isFiltering, uiState.showFilterControls)
         }
 
-        // 只在uri首次设置时加载图片
-        var lastObservedUri: Uri? = null
-        viewModel.uri.observe(this) { imageUri ->
-            Log.d(tag, "URI observed: $imageUri, bitmap is null: ${viewModel.bitmap.value == null}")
-            // 防止重复加载同一张图片
-            if (imageUri != null && viewModel.bitmap.value == null && imageUri != lastObservedUri) {
-                Log.d(tag, "Loading bitmap from URI")
-                lastObservedUri = imageUri
-                viewModel.loadBitmapToMemory(imageUri)
-            }
-        }
         // 观察滤镜值
         viewModel.filterValues.observe(this) { filterValues ->
             switchGrayscale.isChecked = filterValues.grayscale
@@ -357,18 +334,10 @@ class EditorActivity : AppCompatActivity() {
             btnRedo.isEnabled = canRedo
         }
 
-        // 观察消息
-        viewModel.message.observe(this) { message ->
-            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-        }
-
-        // 观察保存结果
-        viewModel.saveResult.observe(this) { success ->
-            if (success) {
-                // 保存成功，导航到主页
-                viewModel.navigateToMain()
-                finish()
-            }
+        // 观察裁剪比例变化
+        viewModel.aspectRatio.observe(this) { aspectRatio ->
+            cropFrameViewGLSurfaceView.setAspectRatio(aspectRatio)
+            updateAspectRatioButtons(aspectRatio)
         }
 
         // 观察显示模式变化

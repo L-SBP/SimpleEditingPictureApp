@@ -129,7 +129,7 @@ class EditorRenderer (
         // 如果已有bitmap，重新加载纹理
         if (imageWidth > 0 && imageHeight > 0) {
             // 从ViewModel获取ImageEditorModel中的bitmap
-            val bitmap = viewModel?.model?.originalBitmap
+            val bitmap = viewModel?.bitmap?.value
             if (bitmap != null) {
                 textureId = TextureHelp.loadTexture(context, bitmap)
                 Log.d(tag, "重新加载纹理，textureId: $textureId")
