@@ -23,17 +23,18 @@ import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ConcurrentLinkedDeque
+import com.example.simpleeditingpictureapp.opengl_es.CropFrameGLSurfaceView
 
 /**
- * 编辑器ViewModel
- * 负责处理编辑器的业务逻辑和UI状态
+ * 编辑器ViewModel - MVVM架构中的ViewModel层
+ * 负责处理编辑器的业务逻辑和UI状态，连接View层和Model层
  */
 class EditorViewModel(application: Application) : AndroidViewModel(application), EditorRenderer.CropMatrixChangeListener {
     private val tag = "EditorViewModel"
     private val context = application.applicationContext
 
     // 数据模型
-    val model = ImageEditorModel()
+    private val model = ImageEditorModel()
 
     // 渲染器
     private var renderer: EditorRenderer? = null
@@ -60,6 +61,14 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
     private val _cropRect = MutableLiveData<RectF>()
     val cropRect: LiveData<RectF> = _cropRect
 
+    // 错误事件
+    private val _errorEvent = MutableLiveData<String>()
+    val errorEvent: LiveData<String> = _errorEvent
+
+    // 导航事件
+    private val _navigationEvent = MutableLiveData<Boolean>()
+    val navigationEvent: LiveData<Boolean> = _navigationEvent
+
     // 消息LiveData
     private val _message = MutableLiveData<String>()
     val message: LiveData<String> = _message
@@ -77,6 +86,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
     // 显示模式
     private val _displayMode = MutableLiveData(EditorRenderer.DisplayMode.FIT_CENTER)
     val displayMode: LiveData<EditorRenderer.DisplayMode> = _displayMode
+
+    // 裁剪比例
+    private val _aspectRatio = MutableLiveData<CropFrameGLSurfaceView.AspectRatio>()
+    val aspectRatio: LiveData<CropFrameGLSurfaceView.AspectRatio> = _aspectRatio
 
     init {
         // 初始化UI状态
@@ -96,11 +109,128 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
     }
 
     /**
+     * 初始化编辑器
+     */
+    fun initializeEditor(imageUri: Uri?) {
+        if (imageUri == null) {
+            _errorEvent.value = "无法加载图片"
+            return
+        }
+
+        setImageUri(imageUri)
+    }
+
+    /**
      * 设置图片URI
      */
-    fun setImageUri(uri: Uri) {
+    private fun setImageUri(uri: Uri) {
         model.imageUri = uri
         _uri.value = uri
+        loadBitmapToMemory(uri)
+    }
+
+    // ============ UI事件处理方法 ============
+
+    /**
+     * 处理返回按钮点击
+     */
+    fun onBackClicked() {
+        navigateToMain()
+    }
+
+    /**
+     * 处理保存按钮点击
+     */
+    fun onSaveClicked(glSurfaceView: GLSurfaceView) {
+        saveEditedImage(glSurfaceView)
+    }
+
+    /**
+     * 处理撤销按钮点击
+     */
+    fun onUndoClicked() {
+        undo()
+    }
+
+    /**
+     * 处理重做按钮点击
+     */
+    fun onRedoClicked() {
+        redo()
+    }
+
+    /**
+     * 处理裁剪按钮点击
+     */
+    fun onCropClicked() {
+        enterCropMode()
+    }
+
+    /**
+     * 处理滤镜按钮点击
+     */
+    fun onFilterClicked() {
+        enterFilterMode()
+    }
+
+    /**
+     * 处理取消按钮点击
+     */
+    fun onCancelClicked() {
+        val uiState = _uiState.value ?: return
+        when {
+            uiState.isCropping -> exitCropMode(false)
+            uiState.isFiltering -> exitFilterMode(false)
+        }
+    }
+
+    /**
+     * 处理确认按钮点击
+     */
+    fun onConfirmClicked() {
+        val uiState = _uiState.value ?: return
+        when {
+            uiState.isCropping -> exitCropMode(true)
+            uiState.isFiltering -> exitFilterMode(true)
+        }
+    }
+
+    /**
+     * 处理裁剪框变化
+     */
+    fun onCropRectChanged(rect: RectF) {
+        updateCropFrameRect(rect)
+    }
+
+    /**
+     * 处理灰度开关变化
+     */
+    fun onGrayscaleChanged(isChecked: Boolean) {
+        val currentValues = _filterValues.value ?: model.getCurrentFilterValues()
+        updateFilterValues(currentValues.copy(grayscale = isChecked))
+    }
+
+    /**
+     * 处理对比度变化
+     */
+    fun onContrastChanged(value: Float) {
+        val currentValues = _filterValues.value ?: model.getCurrentFilterValues()
+        updateFilterValues(currentValues.copy(contrast = value))
+    }
+
+    /**
+     * 处理饱和度变化
+     */
+    fun onSaturationChanged(value: Float) {
+        val currentValues = _filterValues.value ?: model.getCurrentFilterValues()
+        updateFilterValues(currentValues.copy(saturation = value))
+    }
+
+    /**
+     * 处理裁剪比例变化
+     */
+    fun onAspectRatioChanged(aspectRatio: CropFrameGLSurfaceView.AspectRatio) {
+        _aspectRatio.value = aspectRatio
     }
 
     /**
@@ -342,12 +472,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
                 if (editedBitmap != null) {
                     saveBitmapToDevice(editedBitmap)
                 } else {
-                    _message.postValue("保存失败，请重试")
+                    _errorEvent.postValue("保存失败，请重试")
                     _saveResult.postValue(false)
                 }
             } catch (e: Exception) {
                 Log.e(tag, "保存图片时出错", e)
-                _message.postValue("保存失败: ${e.message}")
+                _errorEvent.postValue("保存失败: ${e.message}")
                 _saveResult.postValue(false)
             }
         }
@@ -443,6 +573,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
             // 显示成功消息
             _message.postValue("图片已保存")
             _saveResult.postValue(true)
+            
+            // 保存成功后导航到主页
+            _navigationEvent.postValue(true)
 
         } catch (e: Exception) {
             Log.e(tag, "保存图片到设备时出错", e)
@@ -458,9 +591,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application),
      * 导航到主页
      */
     fun navigateToMain() {
-        val intent = Intent(context, MainActivity::class.java)
-        intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
-        context.startActivity(intent)
+        _navigationEvent.value = true
     }
 
     fun updateFilterValues(values: ImageEditorModel.FilterValues) {

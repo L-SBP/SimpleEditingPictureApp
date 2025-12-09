@@ -18,8 +18,6 @@ import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.load.resource.gif.GifDrawable
-import com.bumptech.glide.request.target.SimpleTarget
-import com.bumptech.glide.request.transition.Transition
 import com.example.simpleeditingpictureapp.R
 import com.example.simpleeditingpictureapp.recyclerview.adapter.BannerAdapter
 import com.example.simpleeditingpictureapp.recyclerview.adapter.RecommendAdapter
@@ -250,14 +248,14 @@ class MainActivity : AppCompatActivity() {
      * 观察ViewModel中的数据变化
      */
     private fun observeViewModel() {
-        // 观察Banner数据
+        // 观察Banner数据，当然在我目前版本的app中不会更新banner，只有加载的时候会传递图片数据
         viewModel.bannerData.observe(this, Observer { data ->
             bannerAdapter.updateData(data)
             // 重新初始化指示器
             initIndicator()
         })
 
-        // 观察推荐数据
+        // 观察推荐数据，其实也不会更新recommend，只有加载的时候会传递图片数据
         viewModel.recommendData.observe(this, Observer { data ->
             recommendAdapter.updateData(data)
         })
